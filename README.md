@@ -51,6 +51,7 @@ omarchy-cursor-dye build [THEME]    build into the cache only, don't touch the s
 omarchy-cursor-dye apply            re-apply the last build (e.g. right after login)
 omarchy-cursor-dye status           show resolved colours and cache state
 omarchy-cursor-dye clear-cache      drop every cached build
+omarchy-cursor-dye config           print config.toml's path and open it in your editor (--path: print only)
 omarchy-cursor-dye env              print the Hyprland env snippet (--format lua|conf)
 
   --force              rebuild even if the colours are unchanged
@@ -71,8 +72,10 @@ and anything launched afterwards, update immediately.
 
 ## Configuration
 
-Optional, at `~/.config/omarchy-cursor-dye/config.toml` (see
-[`config.example.toml`](config.example.toml) for the annotated version):
+Optional, at `~/.config/omarchy-cursor-dye/config.toml` - `omarchy-cursor-dye config`
+opens it in your editor (creating it from the example on first use), or add
+`--path` to just print where it lives. See
+[`config.example.toml`](config.example.toml) for the annotated version:
 
 ```toml
 [colors]

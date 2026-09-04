@@ -12,6 +12,8 @@ Commands:
   apply           re-apply the last build (useful straight after login).
   status          show the resolved colours and cache state.
   clear-cache     drop every cached build.
+  config          print config.toml's path and open it (--path: print only).
+  env             print the Hyprland env snippet (--format lua|conf).
 
 Options:
   --force         rebuild even if the colours are unchanged.
@@ -29,6 +31,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -672,6 +675,33 @@ def cmd_clear_cache(args: argparse.Namespace) -> None:
     log("cache cleared")
 
 
+def cmd_config(args: argparse.Namespace) -> None:
+    """Print (and, unless --path, open) config.toml. Creates it from
+    config.example.toml on first use, same as the installer does."""
+    if not CONFIG_FILE.is_file():
+        CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        example = REPO_ROOT / "config.example.toml"
+        if example.is_file():
+            shutil.copy(example, CONFIG_FILE)
+        else:
+            CONFIG_FILE.write_text('[colors]\npreset = "accent-fill"\n')
+        log(f"created {CONFIG_FILE}")
+
+    print(CONFIG_FILE)
+    if args.path:
+        return
+
+    editor = shlex.split(os.environ.get("VISUAL") or os.environ.get("EDITOR") or "")
+    if not editor and have("omarchy-launch-editor"):
+        editor = ["omarchy-launch-editor", "--inline"]
+    if not editor and have("xdg-open"):
+        editor = ["xdg-open"]
+    if not editor:
+        warn("no editor found ($EDITOR/$VISUAL unset) - open the path above yourself")
+        return
+    subprocess.run([*editor, str(CONFIG_FILE)])
+
+
 def cmd_env(args: argparse.Namespace) -> None:
     """Emit the Hyprland snippet that pins the pointer across logins. The
     installer drops this into ~/.config/hypr; print it yourself to check or to
@@ -718,12 +748,15 @@ def main(argv: list[str] | None = None) -> int:
     sp = sub.add_parser("env", parents=[common])
     sp.add_argument("--format", choices=("lua", "conf"), default="lua")
 
+    sp = sub.add_parser("config", parents=[common])
+    sp.add_argument("--path", action="store_true", help="print the path only, don't open an editor")
+
     args = p.parse_args(argv)
     args.quiet = getattr(args, "quiet", False)
     args.dry_run = getattr(args, "dry_run", False)
     QUIET = args.quiet
 
-    if args.cmd != "env":
+    if args.cmd not in ("env", "config"):
         for tool in ("hyprcursor-util", "rsvg-convert"):
             if not have(tool):
                 die(f"required tool missing: {tool}")
@@ -735,6 +768,7 @@ def main(argv: list[str] | None = None) -> int:
         "status": lambda: cmd_status(args),
         "clear-cache": lambda: cmd_clear_cache(args),
         "env": lambda: cmd_env(args),
+        "config": lambda: cmd_config(args),
     }[args.cmd]()
     return 0
 
