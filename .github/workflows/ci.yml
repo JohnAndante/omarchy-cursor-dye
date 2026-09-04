@@ -165,6 +165,23 @@ jobs:
           out=$(omarchy-cursor-dye sync --dry-run --base '#ff5fd7' 2>&1) || { echo "::error::--dry-run failed on an uncached colour set"; echo "$out"; exit 1; }
           omarchy-cursor-dye sync --force
 
+      - name: "Regression: refreshed artwork invalidates the cache, drift fails loudly"
+        run: |
+          set -e
+          svg="$HOME/.local/share/omarchy-cursor-dye/svg/modern/left_ptr.svg"
+          omarchy-cursor-dye sync --force
+
+          touch "$svg"
+          after=$(omarchy-cursor-dye sync 2>&1)
+          echo "$after" | grep -q '^:: colours unchanged$' && { echo "::error::a touched SVG didn't invalidate the cache"; exit 1; }
+
+          cp "$svg" /tmp/left_ptr.bak
+          sed -i 's/#00FF00/#3d3d3d/gi; s/#0000FF/#c8c8c8/gi' "$svg"
+          out=$(omarchy-cursor-dye sync --force 2>&1) && { echo "::error::placeholder drift built successfully instead of failing"; cp /tmp/left_ptr.bak "$svg"; exit 1; }
+          echo "$out" | grep -q "no placeholder colour" || { echo "::error::wrong/missing error for placeholder drift"; echo "$out"; cp /tmp/left_ptr.bak "$svg"; exit 1; }
+          cp /tmp/left_ptr.bak "$svg"
+          omarchy-cursor-dye sync --force
+
       - name: Validate the installed theme
         run: |
           set -e

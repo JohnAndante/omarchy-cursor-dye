@@ -50,6 +50,8 @@ PLACEHOLDERS = {
     "watch": ("#ff0000", "#fe0000"),
 }
 
+ANY_HEX = re.compile(r"#[0-9a-fA-F]{3,8}")
+
 XDG_DATA = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
 XDG_CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
 XDG_STATE = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state"))
@@ -407,6 +409,29 @@ def svg_root(style: str) -> Path:
     return d
 
 
+def _svg_files(d: Path):
+    # A Bibata style dir is symlinks into svg/groups/, animated frame dirs
+    # included - Path.rglob() would not follow those.
+    for p in sorted(d.iterdir()):
+        if p.is_dir():
+            yield from _svg_files(p)
+        elif p.is_file():
+            yield p
+
+
+def art_fingerprint(style: str) -> str:
+    """Digest of the artwork a build would actually use: the spec by content
+    (install.sh rewrites it every run), the SVGs by size and mtime - dozens of
+    files, no need to read them."""
+    h = hashlib.sha256()
+    h.update(first_existing(spec_candidates(style), "cursors.toml").read_bytes())
+    root = svg_root(style)
+    for p in _svg_files(root):
+        st = p.stat()
+        h.update(f"{p.relative_to(root)}\0{st.st_size}\0{st.st_mtime_ns}\0".encode())
+    return h.hexdigest()[:16]
+
+
 # --------------------------------------------------------------------------- #
 # recolour + build
 # --------------------------------------------------------------------------- #
@@ -418,10 +443,12 @@ def _sub_map(colors: dict[str, str]) -> list[tuple[re.Pattern, str]]:
     return subs
 
 
-def recolor(text: str, subs: list[tuple[re.Pattern, str]]) -> str:
+def recolor(text: str, subs: list[tuple[re.Pattern, str]]) -> tuple[str, int]:
+    hits = 0
     for pat, repl in subs:
-        text = pat.sub(repl, text)
-    return text
+        text, n = pat.subn(repl, text)
+        hits += n
+    return text, hits
 
 
 def frames_for(shape: dict, style_dir: Path) -> list[Path]:
@@ -456,10 +483,23 @@ def build_theme(colors: dict[str, str], cfg: dict, spec: list[dict], out_dir: Pa
             warn(f"missing SVG for {shape['name']}, skipping")
             continue
         dsts = []
+        hits = 0
+        dyeable = False
         for i, src in enumerate(srcs, 1):
             dst = sdir / (f"{i:03d}.svg" if shape["animated"] else "cursor.svg")
-            dst.write_text(recolor(src.read_text(), subs))
+            text = src.read_text()
+            dyeable = dyeable or ANY_HEX.search(text) is not None
+            out, n = recolor(text, subs)
+            dst.write_text(out)
+            hits += n
             dsts.append(dst)
+        # A couple of Bibata shapes (X_cursor, wayland-cursor) are drawn in plain
+        # black and white and have nothing to dye. Hex colours but no placeholder
+        # match is the other case: the placeholder set drifted, and shipping an
+        # undyed cursor is worse than failing.
+        if not hits and dyeable:
+            die(f"no placeholder colour in {shape['name']}'s SVGs ({style_dir}) - "
+                f"expected one of {', '.join(p for ps in PLACEHOLDERS.values() for p in ps)}")
         recolored[shape["name"]] = dsts
 
         overrides = [o for o in shape["overrides"] if o != shape["name"]]
@@ -669,12 +709,15 @@ def load_config() -> dict:
 
 
 def build_hash(colors: dict[str, str], cfg: dict) -> str:
+    # "art" is what makes a refreshed Bibata (or a regenerated spec) miss the
+    # cache: without it the old cursors are served as a hit, silently.
     payload = json.dumps(
         {
             "colors": colors,
             "style": cfg["cursor"]["style"],
             "sizes": sorted(cfg["xcursor"]["sizes"]),
             "anim": sorted(cfg["xcursor"]["anim_sizes"]),
+            "art": art_fingerprint(cfg["cursor"]["style"]),
             "v": 1,
         },
         sort_keys=True,
