@@ -113,6 +113,8 @@ jobs:
           ! omarchy-cursor-dye sync --force
           printf '[cursor]\nstyle = "not-a-style"\n' > "$cfg"
           ! omarchy-cursor-dye sync --force
+          printf '[colors]\npreset = "accent-fill"\n' > "$cfg"
+          omarchy-cursor-dye sync --force
 
       - name: Validate the installed theme
         run: |
