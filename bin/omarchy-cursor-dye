@@ -736,10 +736,14 @@ def cmd_sync(args: argparse.Namespace, *, apply: bool) -> None:
 
     if apply and installed and not args.force:
         log("colours unchanged")
-        if not args.dry_run:
-            apply_cursor(size)
-        else:
+        if args.dry_run:
             apply_cursor(size, dry=True)
+        else:
+            apply_cursor(size)
+            # Colours/hash didn't change, but the requested size might have -
+            # keep state.json (what `apply` and `status` read) in sync with
+            # what was actually just applied, not just the theme+colour cache.
+            write_state({**st, "size": size, "theme": theme})
         return
 
     _ensure_cached(h, colors, cfg, force=args.force, dry=args.dry_run)

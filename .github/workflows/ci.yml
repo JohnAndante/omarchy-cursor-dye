@@ -169,6 +169,19 @@ jobs:
           omarchy-cursor-dye env --format conf
           omarchy-cursor-dye config --path
 
+      # Regression: `sync --size N` used to apply the new size live (gsettings/
+      # hyprctl did change) but never wrote it into state.json when the colours
+      # were otherwise unchanged - so `status` (and a later plain `apply`)
+      # still reported/restored the *old* size.
+      - name: "Regression: sync --size persists even when colours are unchanged"
+        run: |
+          set -e
+          omarchy-cursor-dye sync --force
+          omarchy-cursor-dye sync --size 40
+          got=$(omarchy-cursor-dye status | awk '/^size/{print $3}')
+          [ "$got" = "40" ] || { echo "::error::status reports size $got after sync --size 40"; exit 1; }
+          omarchy-cursor-dye sync --size 24 --force
+
       - name: Uninstall cleans up
         run: |
           set -e

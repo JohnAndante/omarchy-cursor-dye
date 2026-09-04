@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.1.2
+
+Bugfix, found during a documentation/CLI audit:
+
+- `sync --size N` applied the new size live (`hyprctl`/`gsettings` did
+  change) but never persisted it to `state.json` when the colours were
+  otherwise unchanged, so `status` kept reporting the old size, and a later
+  plain `apply` (e.g. after login) would have silently reverted the cursor
+  to that stale size. CI now has a regression test for it.
+- README: the `[colors]` example in the Configuration section still showed
+  the pre-`preset` `base`/`outline`/`watch` layout; the "How it works"
+  diagram still said the hook names the theme when calling `sync` (it
+  hasn't since v1.1.1) and didn't mention reading `shell.toml`'s `[bar]`;
+  a stray line break/period in the Credits line. All fixed.
+
 ## v1.1.1
 
 Bugfix: `bar-fill` / `bar-outline` / `accent-outline-bar` were silently
