@@ -27,6 +27,7 @@ Options:
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import json
 import os
@@ -37,6 +38,7 @@ import subprocess
 import sys
 import tomllib
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
 THEME_NAME = "omarchy-dye"
@@ -489,21 +491,33 @@ def build_theme(colors: dict[str, str], cfg: dict, spec: list[dict], out_dir: Pa
     if compiled is None:
         die("hyprcursor-util produced no theme")
 
-    # 3. assemble the final theme dir: hyprcursor + xcursor side by side
-    final = out_dir / "theme"
-    if final.exists():
-        shutil.rmtree(final)
-    final.mkdir(parents=True)
-    shutil.copy(compiled / "manifest.hl", final / "manifest.hl")
-    shutil.copytree(compiled / "hyprcursors", final / "hyprcursors")
-    (final / "index.theme").write_text(
+    # 3. assemble the final theme dir: hyprcursor + xcursor side by side.
+    # Built under a scratch name and renamed into place only once everything
+    # succeeded, so an interrupted build can never look like a cache hit.
+    partial = out_dir / "theme.partial"
+    if partial.exists():
+        shutil.rmtree(partial)
+    partial.mkdir(parents=True)
+    shutil.copy(compiled / "manifest.hl", partial / "manifest.hl")
+    shutil.copytree(compiled / "hyprcursors", partial / "hyprcursors")
+    (partial / "index.theme").write_text(
         "[Icon Theme]\n"
         f"Name={THEME_NAME}\n"
         "Comment=Dyed to the current Omarchy theme by omarchy-cursor-dye\n"
         "Inherits=Adwaita\n"
     )
 
-    _build_xcursor(recolored, spec, cfg, final / "cursors")
+    _build_xcursor(recolored, spec, cfg, partial / "cursors")
+
+    # Nothing reads work/ or hypr/ again; they only earn their keep on a build
+    # that failed, where they're left behind for inspection.
+    shutil.rmtree(work, ignore_errors=True)
+    shutil.rmtree(hypr_out, ignore_errors=True)
+
+    final = out_dir / "theme"
+    if final.exists():
+        shutil.rmtree(final)
+    os.replace(partial, final)
     log(f"built {len(recolored)} shapes")
 
 
@@ -668,6 +682,22 @@ def build_hash(colors: dict[str, str], cfg: dict) -> str:
     return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 
+@contextmanager
+def build_lock():
+    """Serialise build+install across processes: the theme-set hook backgrounds
+    `sync`, so two theme switches in a row otherwise race over the same cache
+    entry and the same install paths. Lives beside state.json rather than in the
+    cache so `clear-cache` can't pull it out from under a running build."""
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(STATE_FILE.parent / "lock", "w") as fh:
+        try:
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            log("another run is building - waiting for it")
+            fcntl.flock(fh, fcntl.LOCK_EX)
+        yield
+
+
 def install_from_cache(h: str, *, dry: bool = False) -> None:
     src = CACHE_DIR / h / "theme"
     if dry:
@@ -680,12 +710,17 @@ def install_from_cache(h: str, *, dry: bool = False) -> None:
         die(f"cache miss for {h}")
     ICONS_DIR.mkdir(parents=True, exist_ok=True)
     staging = ICONS_DIR / f".{THEME_NAME}.new"
-    if staging.exists():
-        shutil.rmtree(staging)
+    previous = ICONS_DIR / f".{THEME_NAME}.old"
+    for scratch in (staging, previous):
+        if scratch.exists():
+            shutil.rmtree(scratch)
     shutil.copytree(src, staging, symlinks=True)
+    # Swap by rename, never by delete-then-copy: the old theme stays in place
+    # until the new one has landed, so a crash mid-swap can't leave DEST gone.
     if DEST.exists():
-        shutil.rmtree(DEST)
+        DEST.rename(previous)
     staging.rename(DEST)
+    shutil.rmtree(previous, ignore_errors=True)
 
 
 # --------------------------------------------------------------------------- #
@@ -721,34 +756,35 @@ def cmd_sync(args: argparse.Namespace, *, apply: bool) -> None:
     cfg, size, theme, colors, h = _resolve(args)
     log(f"theme {theme or '(current)'}  base {colors['base']}  outline {colors['outline']}  watch {colors['watch']}")
 
-    st = read_state()
-    installed = st.get("hash") == h and DEST.is_dir()
+    with nullcontext() if args.dry_run else build_lock():
+        st = read_state()
+        installed = st.get("hash") == h and DEST.is_dir()
 
-    if apply and installed and not args.force:
-        log("colours unchanged")
+        if apply and installed and not args.force:
+            log("colours unchanged")
+            if args.dry_run:
+                apply_cursor(size, dry=True)
+            else:
+                apply_cursor(size)
+                # The colours are unchanged but --size may not be: state.json is what
+                # `apply` and `status` read, so it has to record what was just applied.
+                write_state({**st, "size": size, "theme": theme})
+            return
+
+        _ensure_cached(h, colors, cfg, force=args.force, dry=args.dry_run)
+
+        if not apply:  # `build`: populate the cache only, never touch the session
+            return
+
         if args.dry_run:
+            install_from_cache(h, dry=True)
             apply_cursor(size, dry=True)
-        else:
-            apply_cursor(size)
-            # The colours are unchanged but --size may not be: state.json is what
-            # `apply` and `status` read, so it has to record what was just applied.
-            write_state({**st, "size": size, "theme": theme})
-        return
+            return
 
-    _ensure_cached(h, colors, cfg, force=args.force, dry=args.dry_run)
-
-    if not apply:  # `build`: populate the cache only, never touch the session
-        return
-
-    if args.dry_run:
-        install_from_cache(h, dry=True)
-        apply_cursor(size, dry=True)
-        return
-
-    install_from_cache(h)
-    write_state({"hash": h, "colors": colors, "size": size, "theme": theme})
-    apply_cursor(size)
-    log(f"applied {THEME_NAME} @ {size}px")
+        install_from_cache(h)
+        write_state({"hash": h, "colors": colors, "size": size, "theme": theme})
+        apply_cursor(size)
+        log(f"applied {THEME_NAME} @ {size}px")
 
 
 def _ov(val: str | None, pal: dict[str, str]) -> str | None:
@@ -789,8 +825,9 @@ def cmd_clear_cache(args: argparse.Namespace) -> None:
     if args.dry_run:
         log(f"would remove {CACHE_DIR}")
         return
-    if CACHE_DIR.exists():
-        shutil.rmtree(CACHE_DIR)
+    with build_lock():
+        if CACHE_DIR.exists():
+            shutil.rmtree(CACHE_DIR)
     log("cache cleared")
 
 
