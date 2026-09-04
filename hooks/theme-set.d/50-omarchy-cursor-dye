@@ -2,8 +2,8 @@
 # Installed by omarchy-cursor-dye into ~/.config/omarchy/hooks/theme-set.d/
 #
 # Omarchy runs this after every `omarchy theme set`, passing the new theme's
-# snake-cased name as $1. We re-dye the cursor to match. The build is cached per
-# colour set, so a repeat theme is instant; a new one takes well under a second.
+# snake-cased name as $1. Builds are cached per colour set, so a repeat theme
+# costs nothing.
 
 exec >>"${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-cursor-dye/hook.log" 2>&1
 mkdir -p "${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-cursor-dye"
@@ -14,12 +14,11 @@ command -v omarchy-cursor-dye >/dev/null || {
   exit 0
 }
 
-# Deliberately not "sync $1": Omarchy has already swapped $1's colors.toml AND
-# shell.toml into ~/.local/state/omarchy/current/theme/ by the time this hook
-# runs, so a plain `sync` (theme=current) reads that fully-merged, ground-truth
-# state. Naming the theme instead would make us re-derive its palette from its
-# *source* directory, which most stock themes don't ship a shell.toml in at
-# all - the bar colour then silently goes missing. See palette() in bin/omarchy-cursor-dye.
+# Deliberately not "sync $1". By now Omarchy has staged $1's colors.toml *and*
+# shell.toml into ~/.local/state/omarchy/current/theme/, so plain `sync` reads
+# the fully-merged state; naming the theme re-derives its palette from its source
+# dir, which mostly ships no shell.toml, silently losing the bar colour. See
+# palette() in bin/omarchy-cursor-dye.
 #
-# Don't block the theme switch on the rebuild.
+# Backgrounded so the theme switch doesn't block on the rebuild.
 omarchy-cursor-dye sync &

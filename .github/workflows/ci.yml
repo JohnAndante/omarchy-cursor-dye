@@ -31,10 +31,10 @@ jobs:
               print(f"ok  {f}")
           PY
 
-  # Runs the real tool end to end on a real Arch userland - the only place its
-  # actual dependencies (hyprcursor-util, rsvg-convert, xcursorgen) exist -
-  # against a faked-up Omarchy theme, since no Hyprland session is available
-  # here. apply_cursor()'s hyprctl/gsettings calls no-op via have() checks.
+  # End to end on a real Arch userland - the only place hyprcursor-util,
+  # rsvg-convert and xcursorgen exist - against a faked-up Omarchy theme. There
+  # is no Hyprland session, so apply_cursor()'s hyprctl/gsettings steps simply
+  # no-op via their have() checks.
   build:
     runs-on: ubuntu-latest
     container: archlinux:latest
@@ -57,13 +57,10 @@ jobs:
           mkdir -p "$state"
           echo citest > "$HOME/.local/state/omarchy/current/theme.name"
 
-          # Also fake it as an *installed* theme, the way a stock Omarchy theme
-          # sits in /usr/share/omarchy/themes: colors.toml only, no shell.toml.
-          # Real stock themes never ship one (only a hand-authored one, like a
-          # user theme, would) - this is the exact shape that once made
-          # `sync <name>` (naming the theme instead of using "current") lose
-          # the bar colour and silently fall back to accent. See the "named
-          # theme" step below.
+          # Also fake it as an *installed* theme the way a stock one sits in
+          # /usr/share/omarchy/themes: colors.toml only, no shell.toml. That is
+          # the exact shape that once made `sync <name>` lose the bar colour -
+          # see the regression step below.
           src="$HOME/.config/omarchy/themes/citest"
           mkdir -p "$src"
 
@@ -110,12 +107,9 @@ jobs:
             omarchy-cursor-dye sync --force
           done
 
-      # Regression test for the bug where "bar" silently became accent:
-      # 1. omarchy-cursor-dye sync (the theme-set hook's call, current/staged
-      #    theme) must resolve bar-fill's fill to the real bar colour.
-      # 2. Naming the theme instead (the shape it used to be called with) must
-      #    still degrade safely - background, never accent - even though it
-      #    can't see the staged, fully-merged shell.toml at all.
+      # Regression for the bug where "bar" silently became accent. Plain `sync`
+      # (the hook's call) must reach the real bar colour; naming the theme, which
+      # cannot see the staged shell.toml, must still degrade to background.
       - name: "Regression: bar-fill never resolves to accent"
         run: |
           set -e
@@ -169,10 +163,9 @@ jobs:
           omarchy-cursor-dye env --format conf
           omarchy-cursor-dye config --path
 
-      # Regression: `sync --size N` used to apply the new size live (gsettings/
-      # hyprctl did change) but never wrote it into state.json when the colours
-      # were otherwise unchanged - so `status` (and a later plain `apply`)
-      # still reported/restored the *old* size.
+      # Regression: `sync --size N` applied the size live but skipped state.json
+      # when the colours were unchanged, so `status` and a later `apply` still
+      # used the old size.
       - name: "Regression: sync --size persists even when colours are unchanged"
         run: |
           set -e

@@ -60,8 +60,8 @@ CONFIG_FILE = XDG_CONFIG / "omarchy-cursor-dye" / "config.toml"
 ICONS_DIR = XDG_DATA / "icons"
 DEST = ICONS_DIR / THEME_NAME
 
-# Repo layout: this file is <repo>/bin/omarchy-cursor-dye. The spec is vendored;
-# once installed it also lands in DATA_DIR next to the fetched SVGs.
+# install.sh copies the spec and SVGs into DATA_DIR; the repo checkout is the
+# fallback for running straight from a clone.
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SVG_CANDIDATES = [DATA_DIR / "svg", REPO_ROOT / "vendor" / "bibata" / "svg"]
 
@@ -77,26 +77,15 @@ def spec_candidates(style: str) -> list[Path]:
     fname = STYLES.get(style, "cursors.toml")
     return [DATA_DIR / fname, REPO_ROOT / "share" / fname]
 
-# A preset just seeds the three colour slots; any explicit base/outline/watch in
-# [colors] overrides its slot, and --base/--outline/--watch beat everything.
-#
-# "bar" is the top bar's own background (shell.toml's [bar].background) - a
-# colour the theme author actually picked, as opposed to "auto"'s computed
-# light/dark pole. Falls back to background/foreground when a theme doesn't
-# expose it (see palette()).
+# A preset only seeds the three slots: an explicit base/outline/watch in [colors]
+# overrides its slot, and --base/--outline/--watch beat everything. "bar" is the
+# theme-authored top bar colour (see palette()); "auto" is computed (_auto_pole).
 PRESETS = {
-    # theme accent fills the cursor, computed neutral outline  (the loud one)
     "accent-fill": {"base": "accent", "outline": "auto", "watch": "background"},
-    # accent becomes the border, the fill matches your UI text colour
     "accent-outline": {"base": "foreground", "outline": "accent", "watch": "background"},
-    # like accent-fill, but the outline/watch are the bar's real background
-    # instead of a computed black/white-ish pole
     "accent-fill-bar": {"base": "accent", "outline": "bar", "watch": "bar"},
-    # like accent-outline, but the fill is the bar's real background
     "accent-outline-bar": {"base": "bar", "outline": "accent", "watch": "bar"},
-    # no accent at all: the bar's real colour fills, computed neutral outline
     "bar-fill": {"base": "bar", "outline": "auto", "watch": "background"},
-    # no accent at all: computed neutral fill, the bar's real colour outlines
     "bar-outline": {"base": "auto", "outline": "bar", "watch": "background"},
 }
 
@@ -293,20 +282,12 @@ def palette(theme: str | None) -> dict[str, str]:
 
     out.setdefault("mode", "dark" if luminance(out.get("background", "#000")) < 0.5 else "light")
 
-    # The bar's own [bar] section in shell.toml is theme-authored and can
-    # diverge from colors.toml's background/foreground - Omarchy's *default*
-    # template just mirrors them, but a theme (a hand-tuned one in
-    # ~/.config/omarchy/themes, or one with a shell.bar.toml overlay) may set
-    # bar text/background directly. That only shows up in the fully-merged
-    # file Omarchy actually renders: THEME_DIR/shell.toml for a theme that
-    # ships one outright, or - since no stock theme does - the *staged*
-    # ~/.local/state/omarchy/current/theme/shell.toml, which is only ground
-    # truth while THEME is the theme actually active right now (the shape
-    # every real caller is in: the hook always names the just-applied theme,
-    # and the CLI defaults to it too). Previewing some other, inactive theme
-    # by name has no such source, and bar/bar_text/bar_active are simply
-    # absent - callers fall back to background/foreground, the same values
-    # the default template would have used anyway.
+    # A theme's own bar colours only exist in the fully-merged shell.toml Omarchy
+    # renders. Almost no theme ships one in its source dir, so the real source is
+    # the staged ~/.local/state/omarchy/current/theme/shell.toml - but that is
+    # only ground truth while THEME is the theme actually active now, hence the
+    # guard. Naming some other theme leaves bar/bar_text/bar_active absent and
+    # callers fall back to background/foreground.
     shell_file = None
     if colors_file and (colors_file.parent / "shell.toml").is_file():
         shell_file = colors_file.parent / "shell.toml"
@@ -343,9 +324,9 @@ def resolve_color(spec: str, pal: dict[str, str], *, fallbacks: tuple[str, ...] 
 
 
 def _auto_pole(light: bool, against: str | None) -> str:
-    # Bibata convention - a light theme gets a dark neutral, a dark theme a
-    # light one (it's meant to pop against the desktop, not against `against`
-    # per se), then flipped if that pole is too close to `against` to read.
+    # Bibata convention: the neutral pops against the *desktop*, not against
+    # `against` - so pick by theme mode first, and only flip if that pole is too
+    # close to `against` to still read.
     dark_pole, light_pole = "#141414", "#f4f4f4"
     pole = light_pole if not light else dark_pole
     if against and contrast(against, pole) < 2.0:
@@ -362,21 +343,18 @@ def compute_colors(cfg: dict, pal: dict[str, str], overrides: dict[str, str | No
         die(f"unknown colour preset {cc.get('preset')!r} - pick one of: {', '.join(PRESETS)}")
     slots = {s: cc[s] if s in cc else preset[s] for s in ("base", "outline", "watch")}
 
-    # Fallbacks if the requested key is missing from the palette. Only "accent"
-    # gets the accent-flavoured chain (substitutes of similar intent); every
-    # other key - "bar" in particular - falls back to a plain neutral, never
-    # to accent. Silently turning a no-accent preset (bar-fill, bar-outline,
-    # accent-outline-bar) into accent because "bar" wasn't resolvable would
-    # defeat the entire point of picking it.
+    # Only "accent" gets the accent-flavoured fallback chain. Every other key -
+    # "bar" in particular - degrades to a plain neutral, never to accent:
+    # silently turning a no-accent preset into an accent one would defeat the
+    # entire point of picking it.
     base_fallbacks = (
         ("cursor", "color4", "color1", "foreground", "background")
         if slots["base"] == "accent"
         else ("background",)
     )
 
-    # "auto" can land on either base or outline (never both, in the built-in
-    # presets) - resolve whichever slot has a real colour first, then compute
-    # the other as the theme's dark/light neutral, contrast-checked against it.
+    # "auto" resolves to None here; the real colour is computed below, once the
+    # other slot is known so it can be contrast-checked against it.
     base = overrides.get("base") or resolve_color(slots["base"], pal, fallbacks=base_fallbacks)
     outline = overrides.get("outline") or resolve_color(slots["outline"], pal, fallbacks=("background",))
 
@@ -567,7 +545,6 @@ def _build_xcursor(recolored: dict[str, list[Path]], spec: list[dict], cfg: dict
     with ThreadPoolExecutor(max_workers=min(8, (os.cpu_count() or 4))) as ex:
         list(ex.map(_render_png, jobs))
 
-    # one xcursorgen config per shape, then compile + symlink aliases
     for name, rows in plan.items():
         shape = by_name[name]
         hx, hy = shape["hotspot_x"], shape["hotspot_y"]
@@ -740,9 +717,8 @@ def cmd_sync(args: argparse.Namespace, *, apply: bool) -> None:
             apply_cursor(size, dry=True)
         else:
             apply_cursor(size)
-            # Colours/hash didn't change, but the requested size might have -
-            # keep state.json (what `apply` and `status` read) in sync with
-            # what was actually just applied, not just the theme+colour cache.
+            # The colours are unchanged but --size may not be: state.json is what
+            # `apply` and `status` read, so it has to record what was just applied.
             write_state({**st, "size": size, "theme": theme})
         return
 

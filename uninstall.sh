@@ -30,7 +30,6 @@ for f in "$HYPR_DIR"/looknfeel.lua "$HYPR_DIR"/hyprland.lua "$HYPR_DIR"/hyprland
   [[ -f $f ]] || continue
   if grep -q 'omarchy-cursor-dye' "$f"; then
     sed -i '/>>> omarchy-cursor-dye >>>/,/<<< omarchy-cursor-dye <<</d' "$f"
-    # also drop the lua comment line that precedes the lua marker, if left dangling
     say "cleaned managed block from ${f/#$HOME/\~}"
   fi
 done
