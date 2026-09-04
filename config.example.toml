@@ -1,0 +1,32 @@
+# omarchy-cursor-dye configuration
+#
+# Copy to ~/.config/omarchy-cursor-dye/config.toml and edit. Every key is
+# optional; the defaults shown here are what you get with no file at all.
+# Run `omarchy-cursor-dye sync --force` after changing anything.
+
+[colors]
+# Each value is either a palette key from the Omarchy theme
+# (accent, foreground, background, cursor, color0..color15, selection_background,
+#  ...), a literal hex string ("#ff8800"), or "auto".
+#
+# base    - the cursor fill. This is the colour people will notice.
+# outline - the border. "auto" = dark outline on light themes, light on dark
+#           (the Bibata convention), flipped if that pole clashes with the base.
+# watch   - the disc behind the loading spinner.
+base = "accent"
+outline = "auto"
+watch = "background"
+
+[cursor]
+# Applied cursor size. 24 is the Omarchy default.
+size = 24
+# Bibata silhouette: "modern" (rounded) or "original" (sharp).
+style = "modern"
+
+[xcursor]
+# Pixel sizes baked into the XCursor build (hyprcursor is vector, always crisp).
+# More sizes = larger theme + slightly slower first build per colour set.
+sizes = [24, 32, 48, 64]
+# Animated shapes (progress / wait) are rendered only at these sizes to keep
+# builds quick - they have 54 frames each.
+anim_sizes = [24, 32]

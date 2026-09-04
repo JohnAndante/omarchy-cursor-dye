@@ -1,0 +1,695 @@
+#!/usr/bin/env python3
+"""omarchy-cursor-dye - tint your mouse cursor to match the current Omarchy theme.
+
+Reads the palette Omarchy already generated for the active theme, dyes the Bibata
+cursor SVGs to match, and compiles a single cursor theme (``omarchy-dye``) in both
+hyprcursor and XCursor formats. Wire it to Omarchy's ``theme-set`` hook and the
+pointer re-tints every time you switch themes.
+
+Commands:
+  sync [THEME]    build (if needed) and apply. THEME defaults to the active one.
+  build [THEME]   build only, don't touch the running session.
+  apply           re-apply the last build (useful straight after login).
+  status          show the resolved colours and cache state.
+  clear-cache     drop every cached build.
+
+Options:
+  --force         rebuild even if the colours are unchanged.
+  --dry-run       print what would happen, change nothing.
+  --size N        cursor size for apply (default: config / 24).
+  --base / --outline / --watch HEX
+                  override a colour for this run (hex, or a palette key).
+  -q, --quiet     only warnings and errors.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tomllib
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+THEME_NAME = "omarchy-dye"
+
+# Bibata placeholder colours -> role. #FE0000 shows up in a few watch frames.
+PLACEHOLDERS = {
+    "base": ("#00ff00",),
+    "outline": ("#0000ff",),
+    "watch": ("#ff0000", "#fe0000"),
+}
+
+XDG_DATA = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
+XDG_CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
+XDG_STATE = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state"))
+XDG_CONFIG = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+
+DATA_DIR = XDG_DATA / "omarchy-cursor-dye"
+CACHE_DIR = XDG_CACHE / "omarchy-cursor-dye"
+STATE_FILE = XDG_STATE / "omarchy-cursor-dye" / "state.json"
+CONFIG_FILE = XDG_CONFIG / "omarchy-cursor-dye" / "config.toml"
+ICONS_DIR = XDG_DATA / "icons"
+DEST = ICONS_DIR / THEME_NAME
+
+# Repo layout: this file is <repo>/bin/omarchy-cursor-dye. The spec is vendored;
+# once installed it also lands in DATA_DIR next to the fetched SVGs.
+REPO_ROOT = Path(__file__).resolve().parent.parent
+SPEC_CANDIDATES = [DATA_DIR / "cursors.toml", REPO_ROOT / "share" / "cursors.toml"]
+SVG_CANDIDATES = [DATA_DIR / "svg", REPO_ROOT / "vendor" / "bibata" / "svg"]
+
+DEFAULT_CONFIG = {
+    "colors": {"base": "accent", "outline": "auto", "watch": "background"},
+    "cursor": {"size": 24, "style": "modern"},
+    "xcursor": {"sizes": [24, 32, 48, 64], "anim_sizes": [24, 32]},
+}
+
+QUIET = False
+
+
+def log(msg: str) -> None:
+    if not QUIET:
+        print(f"\033[36m::\033[0m {msg}", file=sys.stderr)
+
+
+def warn(msg: str) -> None:
+    print(f"\033[33mwarning:\033[0m {msg}", file=sys.stderr)
+
+
+def die(msg: str) -> "None":
+    print(f"\033[31merror:\033[0m {msg}", file=sys.stderr)
+    raise SystemExit(1)
+
+
+def have(cmd: str) -> bool:
+    return shutil.which(cmd) is not None
+
+
+# --------------------------------------------------------------------------- #
+# colour maths
+# --------------------------------------------------------------------------- #
+def parse_hex(c: str) -> tuple[int, int, int]:
+    c = c.strip().lstrip("#")
+    if len(c) == 3:
+        c = "".join(ch * 2 for ch in c)
+    if len(c) == 8:  # #rrggbbaa -> drop alpha
+        c = c[:6]
+    if len(c) != 6 or not re.fullmatch(r"[0-9a-fA-F]{6}", c):
+        raise ValueError(f"bad hex colour: {c!r}")
+    return int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16)
+
+
+def to_hex(rgb: tuple[float, float, float]) -> str:
+    return "#" + "".join(f"{max(0, min(255, round(v))):02x}" for v in rgb)
+
+
+def _lin(ch: int) -> float:
+    s = ch / 255
+    return s / 12.92 if s <= 0.04045 else ((s + 0.055) / 1.055) ** 2.4
+
+
+def luminance(c: str) -> float:
+    r, g, b = parse_hex(c)
+    return 0.2126 * _lin(r) + 0.7152 * _lin(g) + 0.0722 * _lin(b)
+
+
+def contrast(a: str, b: str) -> float:
+    la, lb = luminance(a), luminance(b)
+    hi, lo = max(la, lb), min(la, lb)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def mix(a: str, b: str, t: float) -> str:
+    ra, ga, ba = parse_hex(a)
+    rb, gb, bb = parse_hex(b)
+    return to_hex((ra + (rb - ra) * t, ga + (gb - ga) * t, ba + (bb - ba) * t))
+
+
+# --------------------------------------------------------------------------- #
+# omarchy palette
+# --------------------------------------------------------------------------- #
+def omarchy_theme_name() -> str | None:
+    p = XDG_STATE / "omarchy/current/theme.name"
+    if p.is_file():
+        return p.read_text().strip() or None
+    return None
+
+
+def omarchy_colors_file(theme: str | None) -> Path | None:
+    if theme is None:
+        cur = XDG_STATE / "omarchy/current/theme/colors.toml"
+        return cur if cur.is_file() else None
+    for base in (
+        Path("/usr/share/omarchy/themes"),
+        XDG_CONFIG / "omarchy/themes",
+    ):
+        f = base / theme / "colors.toml"
+        if f.is_file():
+            return f
+    # a user theme staged as "current"
+    cur = XDG_STATE / "omarchy/current/theme"
+    if (cur / "colors.toml").is_file() and (
+        (XDG_STATE / "omarchy/current/theme.name").read_text().strip()
+        if (XDG_STATE / "omarchy/current/theme.name").is_file()
+        else ""
+    ) == theme:
+        return cur / "colors.toml"
+    return None
+
+
+def palette(theme: str | None) -> dict[str, str]:
+    """Resolved palette for THEME. Prefers omarchy-theme-color (does the alias
+    cascade + mode detection), falls back to a direct colors.toml read."""
+    colors_file = omarchy_colors_file(theme)
+    out: dict[str, str] = {}
+
+    if colors_file and have("omarchy-theme-color"):
+        try:
+            res = subprocess.run(
+                ["omarchy-theme-color", "--file", str(colors_file), "--all"],
+                capture_output=True, text=True, check=True,
+            )
+            for line in res.stdout.splitlines():
+                if "\t" in line:
+                    k, v = line.split("\t", 1)
+                    out[k.strip()] = v.strip()
+        except subprocess.CalledProcessError:
+            pass
+
+    if not out and colors_file:
+        data = tomllib.loads(colors_file.read_text())
+        flat = data.get("colors", data)  # omarchy 4 is flat; be lenient
+        for k, v in flat.items():
+            if isinstance(v, str):
+                out[k] = v
+
+    if not out:
+        die(
+            "could not read the Omarchy palette"
+            + (f" for theme {theme!r}" if theme else "")
+            + ". Is Omarchy installed and a theme applied?"
+        )
+
+    out.setdefault("mode", "dark" if luminance(out.get("background", "#000")) < 0.5 else "light")
+    return out
+
+
+def resolve_color(spec: str, pal: dict[str, str], *, fallbacks: tuple[str, ...] = ()) -> str | None:
+    spec = spec.strip()
+    if spec.startswith("#"):
+        return to_hex(parse_hex(spec))
+    if spec == "auto":
+        return None
+    for key in (spec, *fallbacks):
+        if key in pal:
+            try:
+                return to_hex(parse_hex(pal[key]))
+            except ValueError:
+                continue
+    return None
+
+
+def compute_colors(cfg: dict, pal: dict[str, str], overrides: dict[str, str | None]) -> dict[str, str]:
+    cc = cfg["colors"]
+    light = pal.get("mode") == "light"
+
+    base = (
+        overrides.get("base")
+        or resolve_color(cc["base"], pal, fallbacks=("accent", "cursor", "color4", "color1", "foreground"))
+        or "#e0e0e0"
+    )
+
+    watch = (
+        overrides.get("watch")
+        or resolve_color(cc["watch"], pal, fallbacks=("background", "color0"))
+        or ("#e8e8e8" if light else "#101010")
+    )
+
+    outline = overrides.get("outline") or resolve_color(cc["outline"], pal)
+    if outline is None:
+        # auto: Bibata convention - light cursors get a dark outline, dark ones a
+        # light outline. Follow the theme's mode, then flip if the base colour is
+        # too close to that pole to read against it.
+        dark_pole, light_pole = "#141414", "#f4f4f4"
+        outline = light_pole if not light else dark_pole
+        if contrast(base, outline) < 2.0:
+            outline = dark_pole if outline == light_pole else light_pole
+
+    return {"base": base, "outline": outline, "watch": watch}
+
+
+# --------------------------------------------------------------------------- #
+# spec + svg sources
+# --------------------------------------------------------------------------- #
+def first_existing(paths: list[Path], what: str) -> Path:
+    for p in paths:
+        if p.exists():
+            return p
+    die(f"{what} not found (looked in: {', '.join(str(p) for p in paths)}). Run install.sh?")
+
+
+def load_spec() -> list[dict]:
+    spec = tomllib.loads(first_existing(SPEC_CANDIDATES, "cursors.toml").read_text())
+    return spec["cursor"]
+
+
+def svg_root(style: str) -> Path:
+    root = first_existing(SVG_CANDIDATES, "Bibata SVG sources")
+    d = root / style
+    if not d.is_dir():
+        die(f"cursor style {style!r} not available under {root}")
+    return d
+
+
+# --------------------------------------------------------------------------- #
+# recolour + build
+# --------------------------------------------------------------------------- #
+def _sub_map(colors: dict[str, str]) -> list[tuple[re.Pattern, str]]:
+    subs = []
+    for role, placeholders in PLACEHOLDERS.items():
+        for ph in placeholders:
+            subs.append((re.compile(re.escape(ph), re.IGNORECASE), colors[role]))
+    return subs
+
+
+def recolor(text: str, subs: list[tuple[re.Pattern, str]]) -> str:
+    for pat, repl in subs:
+        text = pat.sub(repl, text)
+    return text
+
+
+def frames_for(shape: dict, style_dir: Path) -> list[Path]:
+    if shape["animated"]:
+        d = style_dir / shape["source"]
+        return sorted(d.glob("*.svg"))
+    return [style_dir / f"{shape['source']}.svg"]
+
+
+def build_theme(colors: dict[str, str], cfg: dict, spec: list[dict], out_dir: Path) -> None:
+    style_dir = svg_root(cfg["cursor"]["style"])
+    subs = _sub_map(colors)
+    work = out_dir / "work"
+    if work.exists():
+        shutil.rmtree(work)
+    (work / "hyprcursors").mkdir(parents=True)
+
+    (work / "manifest.hl").write_text(
+        f"name = {THEME_NAME}\n"
+        f"description = Dyed to the current Omarchy theme by omarchy-cursor-dye\n"
+        f"version = 1\n"
+        f"cursors_directory = hyprcursors\n"
+    )
+
+    # 1. recolour every SVG into the hyprcursor working tree
+    recolored: dict[str, list[Path]] = {}
+    for shape in spec:
+        sdir = work / "hyprcursors" / shape["name"]
+        sdir.mkdir(parents=True, exist_ok=True)
+        srcs = frames_for(shape, style_dir)
+        if not srcs or not all(p.exists() for p in srcs):
+            warn(f"missing SVG for {shape['name']}, skipping")
+            continue
+        dsts = []
+        for i, src in enumerate(srcs, 1):
+            dst = sdir / (f"{i:03d}.svg" if shape["animated"] else "cursor.svg")
+            dst.write_text(recolor(src.read_text(), subs))
+            dsts.append(dst)
+        recolored[shape["name"]] = dsts
+
+        overrides = [o for o in shape["overrides"] if o != shape["name"]]
+        meta = [
+            "resize_algorithm = none",
+            f"hotspot_x = {shape['hotspot_x']}",
+            f"hotspot_y = {shape['hotspot_y']}",
+        ]
+        meta += [f"define_override = {o}" for o in overrides]
+        if shape["animated"]:
+            delay = shape.get("delay", 40)
+            meta += [f"define_size = 0, {p.name}, {delay}" for p in dsts]
+        else:
+            meta.append(f"define_size = 0, {dsts[0].name}")
+        (sdir / "meta.hl").write_text("\n".join(meta) + "\n")
+
+    # 2. compile hyprcursor
+    hypr_out = out_dir / "hypr"
+    if hypr_out.exists():
+        shutil.rmtree(hypr_out)
+    hypr_out.mkdir(parents=True)
+    run = subprocess.run(
+        ["hyprcursor-util", "--create", str(work), "-o", str(hypr_out)],
+        capture_output=True, text=True,
+    )
+    if run.returncode != 0:
+        die(f"hyprcursor-util failed:\n{run.stdout}\n{run.stderr}")
+    compiled = next(hypr_out.glob("theme_*"), None)
+    if compiled is None:
+        die("hyprcursor-util produced no theme")
+
+    # 3. assemble the final theme dir: hyprcursor + xcursor side by side
+    final = out_dir / "theme"
+    if final.exists():
+        shutil.rmtree(final)
+    final.mkdir(parents=True)
+    shutil.copy(compiled / "manifest.hl", final / "manifest.hl")
+    shutil.copytree(compiled / "hyprcursors", final / "hyprcursors")
+    (final / "index.theme").write_text(
+        "[Icon Theme]\n"
+        f"Name={THEME_NAME}\n"
+        "Comment=Dyed to the current Omarchy theme by omarchy-cursor-dye\n"
+        "Inherits=Adwaita\n"
+    )
+
+    _build_xcursor(recolored, spec, cfg, final / "cursors")
+    log(f"built {len(recolored)} shapes")
+
+
+def _render_png(args: tuple[Path, Path, int]) -> Path | None:
+    src, dst, size = args
+    r = subprocess.run(
+        ["rsvg-convert", "-w", str(size), "-h", str(size), "-o", str(dst), str(src)],
+        capture_output=True, text=True,
+    )
+    if r.returncode != 0 or not dst.is_file():
+        warn(f"rsvg-convert failed for {src.name} @ {size}px: {r.stderr.strip()}")
+        return None
+    return dst
+
+
+def _build_xcursor(recolored: dict[str, list[Path]], spec: list[dict], cfg: dict, cursors_out: Path) -> None:
+    if not have("xcursorgen"):
+        warn("xcursorgen not found - skipping XCursor build (XWayland apps keep the fallback cursor)")
+        warn("  install it with:  sudo pacman -S xorg-xcursorgen")
+        return
+
+    cursors_out.mkdir(parents=True, exist_ok=True)
+    sizes = sorted(set(cfg["xcursor"]["sizes"]))
+    anim_sizes = sorted(set(cfg["xcursor"]["anim_sizes"]) or sizes)
+    by_name = {s["name"]: s for s in spec}
+
+    png_dir = cursors_out.parent / ".png"
+    if png_dir.exists():
+        shutil.rmtree(png_dir)
+    png_dir.mkdir()
+
+    # rasterise everything once, in parallel
+    jobs: list[tuple[Path, Path, int]] = []
+    plan: dict[str, list[tuple[int, Path, int]]] = {}  # name -> [(size, png, frame_idx)]
+    for name, svgs in recolored.items():
+        shape = by_name[name]
+        use = anim_sizes if shape["animated"] else sizes
+        rows = []
+        for fi, svg in enumerate(svgs):
+            for sz in use:
+                png = png_dir / f"{name}_{sz}_{fi:03d}.png"
+                jobs.append((svg, png, sz))
+                rows.append((sz, png, fi))
+        plan[name] = rows
+
+    with ThreadPoolExecutor(max_workers=min(8, (os.cpu_count() or 4))) as ex:
+        list(ex.map(_render_png, jobs))
+
+    # one xcursorgen config per shape, then compile + symlink aliases
+    for name, rows in plan.items():
+        shape = by_name[name]
+        hx, hy = shape["hotspot_x"], shape["hotspot_y"]
+        delay = shape.get("delay", 40) if shape["animated"] else None
+        cfg_lines = []
+        rows.sort(key=lambda r: (r[2], r[0]))  # frame, then size
+        for sz, png, _fi in rows:
+            if not png.is_file():
+                continue
+            line = f"{sz} {round(hx * sz)} {round(hy * sz)} {png.name}"
+            if delay:
+                line += f" {delay}"
+            cfg_lines.append(line)
+        if not cfg_lines:
+            warn(f"no bitmaps rendered for {name}, skipping XCursor shape")
+            continue
+        cfg_path = png_dir / f"{name}.cursor"
+        cfg_path.write_text("\n".join(cfg_lines) + "\n")
+
+        run = subprocess.run(
+            ["xcursorgen", "-p", str(png_dir), cfg_path.name, str(cursors_out / name)],
+            cwd=png_dir, capture_output=True, text=True,
+        )
+        if run.returncode != 0:
+            warn(f"xcursorgen failed for {name}: {run.stderr.strip()}")
+            continue
+        for alias in shape["overrides"]:
+            if alias == name:
+                continue
+            link = cursors_out / alias
+            link.unlink(missing_ok=True)
+            link.symlink_to(name)
+
+    shutil.rmtree(png_dir)
+
+
+# --------------------------------------------------------------------------- #
+# apply
+# --------------------------------------------------------------------------- #
+def apply_cursor(size: int, *, dry: bool = False) -> None:
+    steps = [
+        ["hyprctl", "setcursor", THEME_NAME, str(size)],
+        ["gsettings", "set", "org.gnome.desktop.interface", "cursor-theme", THEME_NAME],
+        ["gsettings", "set", "org.gnome.desktop.interface", "cursor-size", str(size)],
+        ["hyprctl", "setenv", "XCURSOR_THEME", THEME_NAME],
+        ["hyprctl", "setenv", "XCURSOR_SIZE", str(size)],
+        ["hyprctl", "setenv", "HYPRCURSOR_THEME", THEME_NAME],
+        ["hyprctl", "setenv", "HYPRCURSOR_SIZE", str(size)],
+    ]
+    for cmd in steps:
+        if not have(cmd[0]):
+            continue
+        if dry:
+            log("would run: " + " ".join(cmd))
+            continue
+        subprocess.run(cmd, capture_output=True)
+
+    # XWayland / legacy toolkits read ~/.icons/default/index.theme
+    default_theme = ICONS_DIR / "default" / "index.theme"
+    if dry:
+        log(f"would point {default_theme} at {THEME_NAME}")
+    else:
+        default_theme.parent.mkdir(parents=True, exist_ok=True)
+        default_theme.write_text(f"[Icon Theme]\nName=Default\nInherits={THEME_NAME}\n")
+
+
+# --------------------------------------------------------------------------- #
+# state
+# --------------------------------------------------------------------------- #
+def read_state() -> dict:
+    if STATE_FILE.is_file():
+        try:
+            return json.loads(STATE_FILE.read_text())
+        except json.JSONDecodeError:
+            pass
+    return {}
+
+
+def write_state(st: dict) -> None:
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    STATE_FILE.write_text(json.dumps(st, indent=2))
+
+
+def load_config() -> dict:
+    cfg = {k: dict(v) for k, v in DEFAULT_CONFIG.items()}
+    if CONFIG_FILE.is_file():
+        user = tomllib.loads(CONFIG_FILE.read_text())
+        for section, values in user.items():
+            cfg.setdefault(section, {}).update(values)
+    return cfg
+
+
+def build_hash(colors: dict[str, str], cfg: dict) -> str:
+    payload = json.dumps(
+        {
+            "colors": colors,
+            "style": cfg["cursor"]["style"],
+            "sizes": sorted(cfg["xcursor"]["sizes"]),
+            "anim": sorted(cfg["xcursor"]["anim_sizes"]),
+            "v": 1,
+        },
+        sort_keys=True,
+    )
+    return hashlib.sha256(payload.encode()).hexdigest()[:16]
+
+
+def install_from_cache(h: str, *, dry: bool = False) -> None:
+    src = CACHE_DIR / h / "theme"
+    if not src.is_dir():
+        die(f"cache miss for {h}")
+    if dry:
+        log(f"would install {src} -> {DEST}")
+        return
+    ICONS_DIR.mkdir(parents=True, exist_ok=True)
+    staging = ICONS_DIR / f".{THEME_NAME}.new"
+    if staging.exists():
+        shutil.rmtree(staging)
+    shutil.copytree(src, staging, symlinks=True)
+    if DEST.exists():
+        shutil.rmtree(DEST)
+    staging.rename(DEST)
+
+
+# --------------------------------------------------------------------------- #
+# commands
+# --------------------------------------------------------------------------- #
+def _resolve(args: argparse.Namespace) -> tuple[dict, str, str | None, dict[str, str], str]:
+    cfg = load_config()
+    size = args.size or cfg["cursor"]["size"]
+    theme = args.theme or omarchy_theme_name()
+    pal = palette(theme)
+    overrides = {
+        "base": _ov(args.base, pal),
+        "outline": _ov(args.outline, pal),
+        "watch": _ov(args.watch, pal),
+    }
+    colors = compute_colors(cfg, pal, overrides)
+    return cfg, size, theme, colors, build_hash(colors, cfg)
+
+
+def _ensure_cached(h: str, colors: dict[str, str], cfg: dict, *, force: bool, dry: bool) -> None:
+    if (CACHE_DIR / h / "theme").is_dir() and not force:
+        log(f"cache hit {h}")
+        return
+    if dry:
+        log(f"would build {h}")
+        return
+    log(f"building {h} ...")
+    (CACHE_DIR / h).mkdir(parents=True, exist_ok=True)
+    build_theme(colors, cfg, load_spec(), CACHE_DIR / h)
+
+
+def cmd_sync(args: argparse.Namespace, *, apply: bool) -> None:
+    cfg, size, theme, colors, h = _resolve(args)
+    log(f"theme {theme or '(current)'}  base {colors['base']}  outline {colors['outline']}  watch {colors['watch']}")
+
+    st = read_state()
+    installed = st.get("hash") == h and DEST.is_dir()
+
+    if apply and installed and not args.force:
+        log("colours unchanged")
+        if not args.dry_run:
+            apply_cursor(size)
+        else:
+            apply_cursor(size, dry=True)
+        return
+
+    _ensure_cached(h, colors, cfg, force=args.force, dry=args.dry_run)
+
+    if not apply:  # `build`: populate the cache only, never touch the session
+        return
+
+    if args.dry_run:
+        install_from_cache(h, dry=True)
+        apply_cursor(size, dry=True)
+        return
+
+    install_from_cache(h)
+    write_state({"hash": h, "colors": colors, "size": size, "theme": theme})
+    apply_cursor(size)
+    log(f"applied {THEME_NAME} @ {size}px")
+
+
+def _ov(val: str | None, pal: dict[str, str]) -> str | None:
+    if val is None:
+        return None
+    return resolve_color(val, pal) or die(f"could not resolve colour override {val!r}")
+
+
+def cmd_apply(args: argparse.Namespace) -> None:
+    st = read_state()
+    if not DEST.is_dir():
+        die("nothing built yet - run: omarchy-cursor-dye sync")
+    size = args.size or st.get("size") or load_config()["cursor"]["size"]
+    apply_cursor(size, dry=args.dry_run)
+    if not args.dry_run:
+        log(f"applied {THEME_NAME} @ {size}px")
+
+
+def cmd_status(_args: argparse.Namespace) -> None:
+    st = read_state()
+    cfg = load_config()
+    theme = omarchy_theme_name()
+    print(f"omarchy theme : {theme or 'unknown'}")
+    print(f"installed     : {'yes' if DEST.is_dir() else 'no'}  ({DEST})")
+    if st:
+        print(f"applied theme : {st.get('theme')}  (hash {st.get('hash')})")
+        c = st.get("colors", {})
+        print(f"colours       : base {c.get('base')}  outline {c.get('outline')}  watch {c.get('watch')}")
+        print(f"size          : {st.get('size')}")
+    cached = sorted(p.parent.name for p in CACHE_DIR.glob("*/theme") if p.is_dir()) if CACHE_DIR.is_dir() else []
+    print(f"cached builds : {', '.join(cached) or 'none'}")
+    print(f"style         : {cfg['cursor']['style']}")
+    for tool in ("hyprcursor-util", "rsvg-convert", "xcursorgen"):
+        print(f"  {tool:16} {'ok' if have(tool) else 'MISSING'}")
+
+
+def cmd_clear_cache(args: argparse.Namespace) -> None:
+    if args.dry_run:
+        log(f"would remove {CACHE_DIR}")
+        return
+    if CACHE_DIR.exists():
+        shutil.rmtree(CACHE_DIR)
+    log("cache cleared")
+
+
+def main(argv: list[str] | None = None) -> int:
+    global QUIET
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("-q", "--quiet", action="store_true", default=argparse.SUPPRESS)
+    common.add_argument("--dry-run", action="store_true", default=argparse.SUPPRESS)
+
+    p = argparse.ArgumentParser(prog="omarchy-cursor-dye", description=__doc__,
+                                parents=[common],
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    for name in ("sync", "build"):
+        sp = sub.add_parser(name, parents=[common])
+        sp.add_argument("theme", nargs="?")
+        sp.add_argument("--force", action="store_true")
+        sp.add_argument("--size", type=int)
+        sp.add_argument("--base")
+        sp.add_argument("--outline")
+        sp.add_argument("--watch")
+
+    sp = sub.add_parser("apply", parents=[common])
+    sp.add_argument("--size", type=int)
+
+    sub.add_parser("status", parents=[common])
+    sub.add_parser("clear-cache", parents=[common])
+
+    args = p.parse_args(argv)
+    args.quiet = getattr(args, "quiet", False)
+    args.dry_run = getattr(args, "dry_run", False)
+    QUIET = args.quiet
+
+    for tool in ("hyprcursor-util", "rsvg-convert"):
+        if not have(tool):
+            die(f"required tool missing: {tool}")
+
+    if args.cmd == "sync":
+        cmd_sync(args, apply=True)
+    elif args.cmd == "build":
+        cmd_sync(args, apply=False)
+    elif args.cmd == "apply":
+        cmd_apply(args)
+    elif args.cmd == "status":
+        cmd_status(args)
+    elif args.cmd == "clear-cache":
+        cmd_clear_cache(args)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except KeyboardInterrupt:
+        raise SystemExit(130)

@@ -1,0 +1,18 @@
+#!/bin/bash
+# Installed by omarchy-cursor-dye into ~/.config/omarchy/hooks/theme-set.d/
+#
+# Omarchy runs this after every `omarchy theme set`, passing the new theme's
+# snake-cased name as $1. We re-dye the cursor to match. The build is cached per
+# colour set, so a repeat theme is instant; a new one takes well under a second.
+
+exec >>"${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-cursor-dye/hook.log" 2>&1
+mkdir -p "${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-cursor-dye"
+echo "--- $(date -Is)  theme-set $1"
+
+command -v omarchy-cursor-dye >/dev/null || {
+  echo "omarchy-cursor-dye not on PATH; skipping"
+  exit 0
+}
+
+# Don't block the theme switch on the rebuild.
+omarchy-cursor-dye sync "$1" &

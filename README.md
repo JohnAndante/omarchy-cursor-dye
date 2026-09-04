@@ -1,0 +1,130 @@
+# omarchy-cursor-dye
+
+Tint your mouse pointer to match the current [Omarchy](https://omarchy.org) theme.
+
+Omarchy retints your terminal, editor, browser, bar and GTK apps on every
+`omarchy theme set` — but not the mouse cursor. This fills that gap: it reads the
+palette Omarchy already generated, dyes the [Bibata](https://github.com/ful1e5/Bibata_Cursor)
+cursor SVGs to match, and compiles one cursor theme (`omarchy-dye`) in **both**
+hyprcursor and XCursor formats. Wire it to Omarchy's `theme-set` hook and the
+pointer re-dyes itself whenever you switch themes.
+
+![Dyed cursors across a handful of Omarchy themes](docs/preview.png)
+
+- **Vector all the way.** hyprcursor cursors stay SVG — no rasterisation, crisp at
+  any size. XCursor bitmaps are rendered for XWayland / Electron / games.
+- **Fast.** A colour set builds in well under a second and is cached, so repeat
+  themes apply instantly.
+- **Light-touch.** Everything lives under `~/.local` / `~/.config`. One managed
+  block in your Hyprland config, one file in the Omarchy hook dir. Clean uninstall.
+- **No Node, no venv.** Bash + stdlib Python + `hyprcursor-util` + `rsvg-convert`.
+
+## Requirements
+
+Omarchy 4 (Hyprland, Lua config). Packages, all from the official repos:
+
+```bash
+sudo pacman -S --needed hyprcursor librsvg xorg-xcursorgen xcur2png python git
+```
+
+## Install
+
+```bash
+git clone https://github.com/JohnAndante/omarchy-cursor-dye.git ~/Projects/omarchy-cursor-dye
+cd ~/Projects/omarchy-cursor-dye
+./install.sh
+```
+
+The installer fetches the Bibata SVGs (pinned release, ~2 MB, not redistributed
+here), links the `omarchy-cursor-dye` command into `~/.local/bin`, drops the
+`theme-set` hook, adds a small managed block to `~/.config/hypr/looknfeel.lua`
+that pins the `omarchy-dye` pointer, and builds the cursor for your current theme.
+
+Re-run `./install.sh` any time to update; `./install.sh --refresh-svg` also
+re-pulls the Bibata artwork.
+
+## Usage
+
+```
+omarchy-cursor-dye sync [THEME]     build (if needed) and apply — THEME defaults to the active one
+omarchy-cursor-dye build [THEME]    build into the cache only, don't touch the session
+omarchy-cursor-dye apply            re-apply the last build (e.g. right after login)
+omarchy-cursor-dye status           show resolved colours and cache state
+omarchy-cursor-dye clear-cache      drop every cached build
+
+  --force              rebuild even if the colours are unchanged
+  --dry-run            print what would happen, change nothing
+  --size N             cursor size (default: config / 24)
+  --base / --outline / --watch  HEX-or-palette-key   one-off colour override
+```
+
+You normally never run it by hand — the hook does. But this is handy:
+
+```bash
+omarchy-cursor-dye sync --base '#ff5fd7'     # try a colour without editing config
+omarchy-cursor-dye status
+```
+
+Already-running apps may keep the old pointer until they restart. Hyprland itself,
+and anything launched afterwards, update immediately.
+
+## Configuration
+
+Optional, at `~/.config/omarchy-cursor-dye/config.toml` (see
+[`config.example.toml`](config.example.toml)):
+
+```toml
+[colors]
+base    = "accent"      # palette key, "#hex", or "auto"
+outline = "auto"        # auto = dark outline on light themes, light on dark
+watch   = "background"
+
+[cursor]
+size  = 24
+style = "modern"        # "modern" (rounded) or "original" (sharp)
+
+[xcursor]
+sizes      = [24, 32, 48, 64]
+anim_sizes = [24, 32]
+```
+
+Run `omarchy-cursor-dye sync --force` after changing it.
+
+## How it works
+
+```
+omarchy theme set X
+  └─ ~/.config/omarchy/hooks/theme-set.d/50-omarchy-cursor-dye   (X passed as $1)
+       └─ omarchy-cursor-dye sync X
+            1. read the palette         omarchy-theme-color --file .../colors.toml --all
+            2. compute base/outline/watch, hash them
+            3. cache hit?  →  install + apply
+               cache miss? →  dye every Bibata SVG  (sed 3 placeholder colours)
+                              hyprcursor-util --create        → hyprcursors/*.hlc
+                              rsvg-convert + xcursorgen        → cursors/* (+ alias symlinks)
+                              swap into ~/.local/share/icons/omarchy-dye/
+            4. hyprctl setcursor + gsettings + ~/.icons/default/index.theme
+```
+
+The theme name (`omarchy-dye`) never changes — only its contents — so the
+Hyprland env block is written once and left alone.
+
+`share/cursors.toml` (the 56 shapes, hotspots and X11 aliases) is distilled from
+Bibata's own build config by [`dev/gen-cursors-spec.py`](dev/gen-cursors-spec.py);
+rerun that if you bump the pinned Bibata release.
+
+## Uninstall
+
+```bash
+cd ~/Projects/omarchy-cursor-dye
+./uninstall.sh                 # add --keep-config to keep config.toml
+```
+
+Removes the command, hook, built theme, cache and the managed Hyprland block, and
+resets the pointer. Log out / back in to clear the cursor env fully.
+
+## Credits
+
+Cursor artwork: [Bibata](https://github.com/ful1e5/Bibata_Cursor) by Abdulkaiz
+Khatri (GPL-3.0). Cursor themes this tool produces are derivative works of Bibata
+and carry the GPL-3.0; the tool itself is MIT.

@@ -1,0 +1,7 @@
+# local scratch
+/tmp/
+*.pyc
+__pycache__/
+
+# nothing runtime lives in the repo - it all goes under XDG dirs
+/vendor/
