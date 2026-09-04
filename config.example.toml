@@ -5,7 +5,7 @@
 # Run `omarchy-cursor-dye sync --force` after changing anything.
 
 [colors]
-# `preset` picks how the theme's colours land on the cursor. Four are built in:
+# `preset` picks how the theme's colours land on the cursor. Six are built in:
 #
 #   "accent-fill"         (default) - accent fills the cursor, a computed
 #                          neutral outline. Loud - reads as "the theme's colour".
@@ -16,6 +16,10 @@
 #                          instead of a computed black/white-ish pole.
 #   "accent-outline-bar"  - like accent-outline, but the fill is that same
 #                          real bar colour instead of the generic foreground.
+#   "bar-fill"             - no accent at all: the bar's real colour fills,
+#                          computed neutral outline. Muted, matches your UI.
+#   "bar-outline"          - no accent at all: computed neutral fill, the bar's
+#                          real colour outlines.
 preset = "accent-fill"
 
 # Any of the three slots below overrides that slot of the chosen preset - set

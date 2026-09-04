@@ -1,5 +1,8 @@
 # omarchy-cursor-dye
 
+[![Release](https://img.shields.io/github/v/release/JohnAndante/omarchy-cursor-dye?label=release)](https://github.com/JohnAndante/omarchy-cursor-dye/releases/latest)
+[![License](https://img.shields.io/github/license/JohnAndante/omarchy-cursor-dye)](LICENSE)
+
 Tint your mouse pointer to match the current [Omarchy](https://omarchy.org) theme.
 
 Omarchy retints your terminal, editor, browser, bar and GTK apps on every
@@ -121,6 +124,8 @@ by a **preset**, then overridable per slot:
 | `accent-outline` | foreground | accent | subtler - accent shows as a thin edge |
 | `accent-fill-bar` | accent | **bar** (the top bar's real background) | like accent-fill, outline matches your actual bar instead of a computed pole |
 | `accent-outline-bar` | **bar** | accent | like accent-outline, fill matches your actual bar instead of the generic foreground |
+| `bar-fill` | **bar** | auto (computed) | no accent at all - just the bar's real colour and a computed neutral |
+| `bar-outline` | auto (computed) | **bar** | same idea, flipped - the bar's real colour is the outline |
 
 `bar` is not a heuristic — it's `shell.toml`'s `[bar].background` for the active
 theme, i.e. whatever colour your top bar is actually rendered in (falls back to
@@ -131,7 +136,7 @@ theme, i.e. whatever colour your top bar is actually rendered in (falls back to
 preset = "accent-fill-bar"
 ```
 
-![all four presets](docs/presets.png)
+![all six presets](docs/presets.png)
 
 Override just one slot without leaving the preset - each value is a **palette
 key** from the active theme (`accent`, `foreground`, `background`, `cursor`,

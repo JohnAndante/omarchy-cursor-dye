@@ -94,6 +94,10 @@ PRESETS = {
     "accent-fill-bar": {"base": "accent", "outline": "bar", "watch": "bar"},
     # like accent-outline, but the fill is the bar's real background
     "accent-outline-bar": {"base": "bar", "outline": "accent", "watch": "bar"},
+    # no accent at all: the bar's real colour fills, computed neutral outline
+    "bar-fill": {"base": "bar", "outline": "auto", "watch": "background"},
+    # no accent at all: computed neutral fill, the bar's real colour outlines
+    "bar-outline": {"base": "auto", "outline": "bar", "watch": "background"},
 }
 
 DEFAULT_CONFIG = {
@@ -124,6 +128,8 @@ config.toml lives at {CONFIG_FILE}
               accent-outline       accent outlines, fill = foreground
               accent-fill-bar      accent fills, outline = the bar's real colour
               accent-outline-bar   accent outlines, fill = the bar's real colour
+              bar-fill             no accent - the bar's real colour fills
+              bar-outline          no accent - the bar's real colour outlines
 
   base      overrides the preset's fill.
   outline   overrides the preset's outline. "auto" = dark outline on a light
@@ -323,6 +329,17 @@ def resolve_color(spec: str, pal: dict[str, str], *, fallbacks: tuple[str, ...] 
     return None
 
 
+def _auto_pole(light: bool, against: str | None) -> str:
+    # Bibata convention - a light theme gets a dark neutral, a dark theme a
+    # light one (it's meant to pop against the desktop, not against `against`
+    # per se), then flipped if that pole is too close to `against` to read.
+    dark_pole, light_pole = "#141414", "#f4f4f4"
+    pole = light_pole if not light else dark_pole
+    if against and contrast(against, pole) < 2.0:
+        pole = dark_pole if pole == light_pole else light_pole
+    return pole
+
+
 def compute_colors(cfg: dict, pal: dict[str, str], overrides: dict[str, str | None]) -> dict[str, str]:
     cc = cfg["colors"]
     light = pal.get("mode") == "light"
@@ -332,27 +349,27 @@ def compute_colors(cfg: dict, pal: dict[str, str], overrides: dict[str, str | No
         die(f"unknown colour preset {cc.get('preset')!r} - pick one of: {', '.join(PRESETS)}")
     slots = {s: cc[s] if s in cc else preset[s] for s in ("base", "outline", "watch")}
 
-    base = (
-        overrides.get("base")
-        or resolve_color(slots["base"], pal, fallbacks=("accent", "cursor", "color4", "color1", "foreground", "background"))
-        or "#e0e0e0"
+    # "auto" can land on either base or outline (never both, in the built-in
+    # presets) - resolve whichever slot has a real colour first, then compute
+    # the other as the theme's dark/light neutral, contrast-checked against it.
+    base = overrides.get("base") or resolve_color(
+        slots["base"], pal, fallbacks=("accent", "cursor", "color4", "color1", "foreground", "background")
     )
+    outline = overrides.get("outline") or resolve_color(slots["outline"], pal, fallbacks=("background",))
+
+    if base is None and outline is None:
+        base = _auto_pole(light, None)
+        outline = _auto_pole(not light, base)
+    elif base is None:
+        base = _auto_pole(light, outline)
+    elif outline is None:
+        outline = _auto_pole(light, base)
 
     watch = (
         overrides.get("watch")
         or resolve_color(slots["watch"], pal, fallbacks=("background", "color0"))
         or ("#e8e8e8" if light else "#101010")
     )
-
-    outline = overrides.get("outline") or resolve_color(slots["outline"], pal, fallbacks=("background",))
-    if outline is None:
-        # auto: Bibata convention - light cursors get a dark outline, dark ones a
-        # light outline. Follow the theme's mode, then flip if the base colour is
-        # too close to that pole to read against it.
-        dark_pole, light_pole = "#141414", "#f4f4f4"
-        outline = light_pole if not light else dark_pole
-        if contrast(base, outline) < 2.0:
-            outline = dark_pole if outline == light_pole else light_pole
 
     return {"base": base, "outline": outline, "watch": watch}
 
