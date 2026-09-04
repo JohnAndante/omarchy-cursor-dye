@@ -1,0 +1,137 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ShellCheck
+        run: shellcheck install.sh uninstall.sh hooks/theme-set.d/50-omarchy-cursor-dye
+
+      - name: Python syntax
+        run: python3 -m py_compile bin/omarchy-cursor-dye dev/gen-cursors-spec.py
+
+      - name: TOML files parse
+        run: |
+          python3 - <<'PY'
+          import tomllib, glob, sys
+          files = glob.glob("share/*.toml") + ["config.example.toml"]
+          for f in files:
+              with open(f, "rb") as fh:
+                  tomllib.load(fh)
+              print(f"ok  {f}")
+          PY
+
+  # Runs the real tool end to end on a real Arch userland - the only place its
+  # actual dependencies (hyprcursor-util, rsvg-convert, xcursorgen) exist -
+  # against a faked-up Omarchy theme, since no Hyprland session is available
+  # here. apply_cursor()'s hyprctl/gsettings calls no-op via have() checks.
+  build:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install dependencies
+        run: |
+          pacman -Syu --noconfirm --needed git python hyprcursor librsvg xorg-xcursorgen xcur2png
+
+      - uses: actions/checkout@v4
+
+      - name: Cache Bibata cursor SVGs
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/omarchy-cursor-dye/svg
+          key: bibata-v2.0.7
+
+      - name: Fake an active Omarchy theme
+        run: |
+          state="$HOME/.local/state/omarchy/current/theme"
+          mkdir -p "$state"
+          echo citest > "$HOME/.local/state/omarchy/current/theme.name"
+          cat > "$state/colors.toml" <<'EOF'
+          accent = "#e75a50"
+          cursor = "#c0af7f"
+          foreground = "#efebdc"
+          background = "#1b1b1b"
+          selection_foreground = "#1b1b1b"
+          selection_background = "#e75a50"
+          color0 = "#1b1b1b"
+          color1 = "#f44336"
+          color2 = "#e75a50"
+          color3 = "#a99b7a"
+          color4 = "#e58980"
+          color5 = "#77838a"
+          color6 = "#6d6d6d"
+          color7 = "#e1ce98"
+          EOF
+          cat > "$state/shell.toml" <<'EOF'
+          [bar]
+          background = "#101010"
+          text = "#a99b7a"
+          active = "#e75a50"
+          EOF
+
+      - name: Install (fetches Bibata, links the command, builds once)
+        run: ./install.sh
+
+      - name: status
+        run: omarchy-cursor-dye status
+
+      - name: Build every colour preset
+        run: |
+          set -e
+          cfg="$(omarchy-cursor-dye config --path)"
+          for preset in accent-fill accent-outline accent-fill-bar accent-outline-bar bar-fill bar-outline; do
+            printf '[colors]\npreset = "%s"\n' "$preset" > "$cfg"
+            omarchy-cursor-dye sync --force
+          done
+
+      - name: Build every cursor style
+        run: |
+          set -e
+          cfg="$(omarchy-cursor-dye config --path)"
+          for style in modern original modern-right original-right; do
+            printf '[cursor]\nstyle = "%s"\n' "$style" > "$cfg"
+            omarchy-cursor-dye sync --force
+          done
+
+      - name: A bad preset/style is rejected
+        run: |
+          set -e
+          cfg="$(omarchy-cursor-dye config --path)"
+          printf '[colors]\npreset = "not-a-preset"\n' > "$cfg"
+          ! omarchy-cursor-dye sync --force
+          printf '[cursor]\nstyle = "not-a-style"\n' > "$cfg"
+          ! omarchy-cursor-dye sync --force
+
+      - name: Validate the installed theme
+        run: |
+          set -e
+          theme=~/.local/share/icons/omarchy-dye
+          test -f "$theme/manifest.hl"
+          [ "$(find "$theme/hyprcursors" -name '*.hlc' | wc -l)" -gt 0 ]
+          test -f "$theme/cursors/left_ptr"
+          [ "$(head -c4 "$theme/cursors/left_ptr")" = "Xcur" ]
+          test -L "$theme/cursors/default"
+
+      - name: env / config --path
+        run: |
+          omarchy-cursor-dye env --format lua
+          omarchy-cursor-dye env --format conf
+          omarchy-cursor-dye config --path
+
+      - name: Uninstall cleans up
+        run: |
+          set -e
+          ./uninstall.sh
+          test ! -e ~/.local/bin/omarchy-cursor-dye
+          test ! -e ~/.local/share/icons/omarchy-dye
+          test ! -e ~/.config/omarchy/hooks/theme-set.d/50-omarchy-cursor-dye

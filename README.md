@@ -1,5 +1,6 @@
 # omarchy-cursor-dye
 
+[![CI](https://github.com/JohnAndante/omarchy-cursor-dye/actions/workflows/ci.yml/badge.svg)](https://github.com/JohnAndante/omarchy-cursor-dye/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/JohnAndante/omarchy-cursor-dye?label=release)](https://github.com/JohnAndante/omarchy-cursor-dye/releases/latest)
 [![License](https://img.shields.io/github/license/JohnAndante/omarchy-cursor-dye)](LICENSE)
 
@@ -166,6 +167,18 @@ cd ~/Projects/omarchy-cursor-dye
 
 Removes the command, hook, built theme, cache and the managed Hyprland block, and
 resets the pointer. Log out / back in to clear the cursor env fully.
+
+## Development
+
+CI (`.github/workflows/ci.yml`) runs on every push/PR: ShellCheck + Python
+syntax + TOML validity, then an end-to-end build in a real Arch container -
+install, every colour preset, every cursor style, a faulty config rejected,
+the compiled theme validated, uninstall confirmed clean. Tagging `vX.Y.Z`
+(with a matching `## vX.Y.Z` section in [CHANGELOG.md](CHANGELOG.md)) drives
+`.github/workflows/release.yml`, which cuts the GitHub release automatically.
+
+Found a security issue? See [SECURITY.md](SECURITY.md) rather than opening a
+public issue.
 
 ## Credits
 
