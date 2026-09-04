@@ -19,11 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-This project builds cursor themes from the Bibata cursor artwork
-(https://github.com/ful1e5/Bibata_Cursor), which is licensed GPL-3.0-or-later.
-The Bibata SVGs are downloaded at install time and are not redistributed here.
-Cursor themes produced by omarchy-cursor-dye are derivative works of Bibata and
-are covered by the GPL-3.0-or-later.

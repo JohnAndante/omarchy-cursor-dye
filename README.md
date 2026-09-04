@@ -206,4 +206,5 @@ resets the pointer. Log out / back in to clear the cursor env fully.
 
 Cursor artwork: [Bibata](https://github.com/ful1e5/Bibata_Cursor) by Abdulkaiz
 Khatri (GPL-3.0). Cursor themes this tool produces are derivative works of Bibata
-and carry the GPL-3.0; the tool itself is MIT.
+and carry the GPL-3.0; the tool itself is [MIT](LICENSE) - see
+[NOTICE.md](NOTICE.md) for the split.
