@@ -7,9 +7,11 @@ works straight from the SVG sources instead, so this script distills that build
 config into a small, stable spec we vendor and read at runtime.
 
 Usage:
-    dev/gen-cursors-spec.py /path/to/Bibata_Cursor > share/cursors.toml
+    dev/gen-cursors-spec.py /path/to/Bibata_Cursor share/
 
-Run it again whenever Bibata bumps its shape set. The output is deterministic.
+Writes share/cursors.toml (normal / right-handed pointer) and
+share/cursors-right.toml (left-handed pointer, mirrored hotspots).
+Run it again whenever Bibata bumps its shape set. Output is deterministic.
 """
 
 from __future__ import annotations
@@ -20,15 +22,16 @@ from pathlib import Path
 
 CANVAS = 256  # Bibata SVG viewBox is 0 0 256 256; hotspots below are in these units.
 
+# (build-config subdir, SVG style dir, output filename)
+VARIANTS = [
+    ("normal", "modern", "cursors.toml"),
+    ("right", "modern-right", "cursors-right.toml"),
+]
 
-def main() -> int:
-    if len(sys.argv) != 2:
-        sys.exit(__doc__)
 
-    bibata = Path(sys.argv[1])
-    build_toml = bibata / "configs" / "normal" / "x.build.toml"
-    svg_dir = bibata / "svg" / "modern"
-
+def build_variant(bibata: Path, cfg_sub: str, style: str) -> tuple[str, int]:
+    build_toml = bibata / "configs" / cfg_sub / "x.build.toml"
+    svg_dir = bibata / "svg" / style
     if not build_toml.is_file():
         sys.exit(f"not a Bibata checkout: {build_toml} missing")
 
@@ -98,8 +101,19 @@ def main() -> int:
         out.append(f"overrides = [{ov}]")
         out.append("")
 
-    sys.stdout.write("\n".join(out))
-    print(f"\n# {len(shapes)} shapes", file=sys.stderr)
+    return "\n".join(out) + "\n", len(shapes)
+
+
+def main() -> int:
+    if len(sys.argv) != 3:
+        sys.exit(__doc__)
+    bibata, out_dir = Path(sys.argv[1]), Path(sys.argv[2])
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    for cfg_sub, style, fname in VARIANTS:
+        text, n = build_variant(bibata, cfg_sub, style)
+        (out_dir / fname).write_text(text)
+        print(f"{fname}: {n} shapes", file=sys.stderr)
     return 0
 
 

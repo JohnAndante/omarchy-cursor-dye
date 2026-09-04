@@ -62,24 +62,24 @@ overrides = ["center_ptr"]
 name = "circle"
 source = "circle"
 animated = false
-hotspot_x = 0.21484
-hotspot_y = 0.06641
+hotspot_x = 0.80859
+hotspot_y = 0.09375
 overrides = ["circle", "forbidden"]
 
 [[cursor]]
 name = "context-menu"
 source = "context-menu"
 animated = false
-hotspot_x = 0.22266
-hotspot_y = 0.06641
+hotspot_x = 0.80859
+hotspot_y = 0.09375
 overrides = ["context-menu"]
 
 [[cursor]]
 name = "copy"
 source = "copy"
 animated = false
-hotspot_x = 0.21484
-hotspot_y = 0.06641
+hotspot_x = 0.80859
+hotspot_y = 0.09375
 overrides = ["copy", "1081e37283d90000800003c07f3ef6bf", "6407b0e94181790501fd1e167b474872", "b66166c04f8c3109214a4fbd64a50fc8"]
 
 [[cursor]]
@@ -110,32 +110,32 @@ overrides = ["crosshair"]
 name = "dnd-ask"
 source = "dnd-ask"
 animated = false
-hotspot_x = 0.39062
-hotspot_y = 0.25391
+hotspot_x = 0.60938
+hotspot_y = 0.26562
 overrides = ["dnd-ask"]
 
 [[cursor]]
 name = "dnd-copy"
 source = "dnd-copy"
 animated = false
-hotspot_x = 0.39062
-hotspot_y = 0.25391
+hotspot_x = 0.60938
+hotspot_y = 0.26562
 overrides = ["dnd-copy"]
 
 [[cursor]]
 name = "dnd-link"
 source = "dnd-link"
 animated = false
-hotspot_x = 0.39062
-hotspot_y = 0.25391
+hotspot_x = 0.60938
+hotspot_y = 0.26562
 overrides = ["dnd-link", "alias"]
 
 [[cursor]]
 name = "dnd_no_drop"
 source = "dnd_no_drop"
 animated = false
-hotspot_x = 0.39062
-hotspot_y = 0.25391
+hotspot_x = 0.60938
+hotspot_y = 0.26562
 overrides = ["dnd_no_drop", "no-drop"]
 
 [[cursor]]
@@ -158,40 +158,40 @@ overrides = ["fd_double_arrow", "fcf1c3c7cd4491d801f1e1c78f100000", "nesw-resize
 name = "grabbing"
 source = "grabbing"
 animated = false
-hotspot_x = 0.5
-hotspot_y = 0.25781
+hotspot_x = 0.4375
+hotspot_y = 0.25
 overrides = ["grabbing", "closedhand", "dnd-move", "dnd-none", "fcf21c00b30f7e3f83fe0dfd12e71cff"]
 
 [[cursor]]
 name = "hand1"
 source = "hand1"
 animated = false
-hotspot_x = 0.5625
-hotspot_y = 0.30859
+hotspot_x = 0.37891
+hotspot_y = 0.3125
 overrides = ["hand1", "grab", "openhand"]
 
 [[cursor]]
 name = "hand2"
 source = "hand2"
 animated = false
-hotspot_x = 0.44531
-hotspot_y = 0.07031
+hotspot_x = 0.53906
+hotspot_y = 0.05469
 overrides = ["hand2", "9d800788f1b08800ae810202380a0822", "e29285e634086352946a0e7090d73106", "pointer", "pointing_hand"]
 
 [[cursor]]
 name = "left_ptr"
 source = "left_ptr"
 animated = false
-hotspot_x = 0.21484
-hotspot_y = 0.06641
+hotspot_x = 0.80859
+hotspot_y = 0.09375
 overrides = ["left_ptr", "arrow", "default", "top_left_arrow"]
 
 [[cursor]]
 name = "left_ptr_watch"
 source = "left_ptr_watch"
 animated = true
-hotspot_x = 0.21484
-hotspot_y = 0.06641
+hotspot_x = 0.76953
+hotspot_y = 0.09375
 delay = 40
 overrides = ["left_ptr_watch", "00000000000000020006000e7e9ffc3f", "08e8e1c95fe2fc01f976f1e063a24ccd", "3ecb610c1bf2410f44200f48c40d3599", "progress"]
 
@@ -215,8 +215,8 @@ overrides = ["left_tee"]
 name = "link"
 source = "link"
 animated = false
-hotspot_x = 0.21484
-hotspot_y = 0.06641
+hotspot_x = 0.80859
+hotspot_y = 0.09375
 overrides = ["link", "3085a0e285430894940527032f8b26df", "640fb0e74195791501fd1ed57b41487f", "a2a266d0498c3104214a47bd64ab0fc8"]
 
 [[cursor]]
@@ -263,8 +263,8 @@ overrides = ["plus", "cell"]
 name = "pointer-move"
 source = "pointer-move"
 animated = false
-hotspot_x = 0.21484
-hotspot_y = 0.06641
+hotspot_x = 0.80859
+hotspot_y = 0.09375
 overrides = ["pointer-move"]
 
 [[cursor]]
@@ -279,7 +279,7 @@ overrides = ["question_arrow", "5c6cd98b3f3ebcb1f9c7f1c204630408", "d9ce0ab60569
 name = "right_ptr"
 source = "right_ptr"
 animated = false
-hotspot_x = 0.79688
+hotspot_x = 0.21484
 hotspot_y = 0.06641
 overrides = ["right_ptr", "draft_large", "draft_small"]
 

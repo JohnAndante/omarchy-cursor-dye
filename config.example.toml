@@ -5,22 +5,36 @@
 # Run `omarchy-cursor-dye sync --force` after changing anything.
 
 [colors]
-# Each value is either a palette key from the Omarchy theme
-# (accent, foreground, background, cursor, color0..color15, selection_background,
-#  ...), a literal hex string ("#ff8800"), or "auto".
+# The cursor has three colour slots. Each value is one of:
+#   - a palette key from the active Omarchy theme (see the list below)
+#   - a literal hex string, e.g. "#ff8800"
+#   - "auto"  (outline only)
 #
-# base    - the cursor fill. This is the colour people will notice.
+# base    - the cursor fill. The colour people actually notice.
 # outline - the border. "auto" = dark outline on light themes, light on dark
 #           (the Bibata convention), flipped if that pole clashes with the base.
-# watch   - the disc behind the loading spinner.
+# watch   - the disc behind the loading / "app is busy" spinner.
+#
+# Palette keys you can use:
+#   accent  foreground  background  cursor  selection_background
+#   color0 .. color15   (color0 = darkest, usually the bg; color1..6 = the hues)
+#   red green yellow blue magenta cyan  +  bright_red, bright_blue, ...
+#   muted  orange  purple  brown
+# Run `omarchy-theme-color --file ~/.local/state/omarchy/current/theme/colors.toml --all`
+# to see every key resolved for your current theme.
 base = "accent"
 outline = "auto"
 watch = "background"
 
 [cursor]
-# Applied cursor size. 24 is the Omarchy default.
+# Applied cursor size in px. 24 is the Omarchy default. This is written into the
+# Hyprland env block by ./install.sh, so re-run it after changing the size.
 size = 24
-# Bibata silhouette: "modern" (rounded) or "original" (sharp).
+# Which Bibata cursor:
+#   "modern"         rounded edges, right-handed  (default)
+#   "original"       sharp edges, right-handed
+#   "modern-right"   rounded edges, LEFT-handed (mirrored)
+#   "original-right" sharp edges, left-handed
 style = "modern"
 
 [xcursor]

@@ -51,6 +51,7 @@ omarchy-cursor-dye build [THEME]    build into the cache only, don't touch the s
 omarchy-cursor-dye apply            re-apply the last build (e.g. right after login)
 omarchy-cursor-dye status           show resolved colours and cache state
 omarchy-cursor-dye clear-cache      drop every cached build
+omarchy-cursor-dye env              print the Hyprland env snippet (--format lua|conf)
 
   --force              rebuild even if the colours are unchanged
   --dry-run            print what would happen, change nothing
@@ -71,7 +72,7 @@ and anything launched afterwards, update immediately.
 ## Configuration
 
 Optional, at `~/.config/omarchy-cursor-dye/config.toml` (see
-[`config.example.toml`](config.example.toml)):
+[`config.example.toml`](config.example.toml) for the annotated version):
 
 ```toml
 [colors]
@@ -81,14 +82,52 @@ watch   = "background"
 
 [cursor]
 size  = 24
-style = "modern"        # "modern" (rounded) or "original" (sharp)
+style = "modern"        # modern | original | modern-right | original-right
 
 [xcursor]
 sizes      = [24, 32, 48, 64]
 anim_sizes = [24, 32]
 ```
 
-Run `omarchy-cursor-dye sync --force` after changing it.
+Run `omarchy-cursor-dye sync --force` after any change. After changing **`size`**,
+re-run `./install.sh` too — the size is baked into the Hyprland env block so it
+sticks across logins.
+
+### Which cursor
+
+`style` picks the Bibata silhouette:
+
+| value | edges | hand |
+|---|---|---|
+| `modern` *(default)* | rounded | right |
+| `original` | sharp | right |
+| `modern-right` | rounded | **left** (mirrored) |
+| `original-right` | sharp | **left** |
+
+Bibata's named variants (Amber / Ice / Classic) are just colour presets of these
+same shapes — irrelevant here, since the colours are what this tool sets.
+
+### How the colours are chosen
+
+Three slots — `base` (fill), `outline` (border), `watch` (spinner disc). Each
+takes a **palette key** from the active theme (`accent`, `foreground`,
+`background`, `cursor`, `color0`–`color15`, `red`, `blue`, `selection_background`,
+…), a **hex literal** (`"#ff5fd7"`), or `"auto"`. Defaults: fill = the theme's
+`accent`, outline = auto (dark-on-light / light-on-dark), watch = `background`.
+
+Try one without editing the file:
+
+```bash
+omarchy-cursor-dye sync --base '#ff5fd7' --outline '#101010'
+omarchy-cursor-dye sync --base foreground        # palette key works too
+```
+
+### Size
+
+`[cursor] size` is applied live (`hyprctl setcursor`, `gsettings`) and written
+into the Hyprland env block for future logins. `[xcursor] sizes` only controls
+which pixel sizes get baked into the XCursor bitmaps — hyprcursor is vector and
+always crisp, so this is just for XWayland apps.
 
 ## How it works
 
@@ -109,9 +148,11 @@ omarchy theme set X
 The theme name (`omarchy-dye`) never changes — only its contents — so the
 Hyprland env block is written once and left alone.
 
-`share/cursors.toml` (the 56 shapes, hotspots and X11 aliases) is distilled from
-Bibata's own build config by [`dev/gen-cursors-spec.py`](dev/gen-cursors-spec.py);
-rerun that if you bump the pinned Bibata release.
+`share/cursors.toml` and `share/cursors-right.toml` (the 56 shapes, hotspots and
+X11 aliases, per handedness) are distilled from Bibata's own build config by
+[`dev/gen-cursors-spec.py`](dev/gen-cursors-spec.py) — rerun
+`dev/gen-cursors-spec.py <Bibata_Cursor checkout> share/` if you bump the pinned
+Bibata release.
 
 ## Uninstall
 

@@ -70,39 +70,35 @@ if [[ ! -f $CONFIG_DIR/config.toml ]]; then
 fi
 
 # --- Hyprland persistence --------------------------------------------------
-# Pin the pointer by name so it survives a relogin. The theme name is stable;
-# only its colours change, so this block never needs updating.
-add_lua_block() {
-  local file="$1"
-  grep -q 'omarchy-cursor-dye' "$file" 2>/dev/null && { say "hypr env already set in ${file/#$HOME/\~}"; return; }
-  cat >>"$file" <<'LUA'
+# Pin the pointer (name + size) so it survives a relogin. Re-running the
+# installer refreshes the block, so a size change in config.toml propagates.
+manage_block() {
+  local file="$1" fmt="$2" open close body
+  open=">>> omarchy-cursor-dye >>>"
+  close="<<< omarchy-cursor-dye <<<"
+  body="$("$BIN_DIR/omarchy-cursor-dye" env --format "$fmt")"
 
--- >>> omarchy-cursor-dye >>>
--- Keeps the "omarchy-dye" pointer selected across logins. omarchy-cursor-dye
--- recolours that theme in place on every theme switch. Remove this block and
--- run the uninstaller to revert.
-hl.env("HYPRCURSOR_THEME", "omarchy-dye")
-hl.env("XCURSOR_THEME", "omarchy-dye")
--- <<< omarchy-cursor-dye <<<
-LUA
-  say "added hypr env block to ${file/#$HOME/\~}"
+  [[ -f $file ]] && sed -i "/$open/,/$close/d" "$file"
+
+  if [[ $fmt == lua ]]; then
+    { printf '\n-- %s\n' "$open"
+      printf -- '-- Pins the "omarchy-dye" pointer across logins. Refresh with ./install.sh,\n'
+      printf -- '-- remove with ./uninstall.sh.\n'
+      printf '%s\n' "$body"
+      printf -- '-- %s\n' "$close"
+    } >>"$file"
+  else
+    { printf '\n# %s\n' "$open"; printf '%s\n' "$body"; printf '# %s\n' "$close"; } >>"$file"
+  fi
+  say "wrote hypr env block to ${file/#$HOME/\~}"
 }
 
 if [[ -f $HYPR_DIR/looknfeel.lua ]]; then
-  add_lua_block "$HYPR_DIR/looknfeel.lua"
+  manage_block "$HYPR_DIR/looknfeel.lua" lua
 elif [[ -f $HYPR_DIR/hyprland.lua ]]; then
-  add_lua_block "$HYPR_DIR/hyprland.lua"
+  manage_block "$HYPR_DIR/hyprland.lua" lua
 elif [[ -f $HYPR_DIR/hyprland.conf ]]; then
-  if ! grep -q 'omarchy-cursor-dye' "$HYPR_DIR/hyprland.conf"; then
-    cat >>"$HYPR_DIR/hyprland.conf" <<'CONF'
-
-# >>> omarchy-cursor-dye >>>
-env = HYPRCURSOR_THEME,omarchy-dye
-env = XCURSOR_THEME,omarchy-dye
-# <<< omarchy-cursor-dye <<<
-CONF
-    say "added hypr env block to ~/.config/hypr/hyprland.conf"
-  fi
+  manage_block "$HYPR_DIR/hyprland.conf" conf
 else
   warn "no Hyprland config found in $HYPR_DIR - set HYPRCURSOR_THEME=omarchy-dye yourself"
 fi

@@ -60,8 +60,19 @@ DEST = ICONS_DIR / THEME_NAME
 # Repo layout: this file is <repo>/bin/omarchy-cursor-dye. The spec is vendored;
 # once installed it also lands in DATA_DIR next to the fetched SVGs.
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SPEC_CANDIDATES = [DATA_DIR / "cursors.toml", REPO_ROOT / "share" / "cursors.toml"]
 SVG_CANDIDATES = [DATA_DIR / "svg", REPO_ROOT / "vendor" / "bibata" / "svg"]
+
+STYLES = {
+    "modern": "cursors.toml",
+    "original": "cursors.toml",
+    "modern-right": "cursors-right.toml",
+    "original-right": "cursors-right.toml",
+}
+
+
+def spec_candidates(style: str) -> list[Path]:
+    fname = STYLES.get(style, "cursors.toml")
+    return [DATA_DIR / fname, REPO_ROOT / "share" / fname]
 
 DEFAULT_CONFIG = {
     "colors": {"base": "accent", "outline": "auto", "watch": "background"},
@@ -253,8 +264,8 @@ def first_existing(paths: list[Path], what: str) -> Path:
     die(f"{what} not found (looked in: {', '.join(str(p) for p in paths)}). Run install.sh?")
 
 
-def load_spec() -> list[dict]:
-    spec = tomllib.loads(first_existing(SPEC_CANDIDATES, "cursors.toml").read_text())
+def load_spec(style: str) -> list[dict]:
+    spec = tomllib.loads(first_existing(spec_candidates(style), "cursors.toml").read_text())
     return spec["cursor"]
 
 
@@ -503,6 +514,13 @@ def load_config() -> dict:
         user = tomllib.loads(CONFIG_FILE.read_text())
         for section, values in user.items():
             cfg.setdefault(section, {}).update(values)
+    style = cfg["cursor"]["style"]
+    if style not in STYLES:
+        die(f"unknown cursor style {style!r} - pick one of: {', '.join(STYLES)}")
+    try:
+        cfg["cursor"]["size"] = int(cfg["cursor"]["size"])
+    except (TypeError, ValueError):
+        die(f"cursor.size must be a number, got {cfg['cursor']['size']!r}")
     return cfg
 
 
@@ -563,7 +581,7 @@ def _ensure_cached(h: str, colors: dict[str, str], cfg: dict, *, force: bool, dr
         return
     log(f"building {h} ...")
     (CACHE_DIR / h).mkdir(parents=True, exist_ok=True)
-    build_theme(colors, cfg, load_spec(), CACHE_DIR / h)
+    build_theme(colors, cfg, load_spec(cfg["cursor"]["style"]), CACHE_DIR / h)
 
 
 def cmd_sync(args: argparse.Namespace, *, apply: bool) -> None:
@@ -640,6 +658,23 @@ def cmd_clear_cache(args: argparse.Namespace) -> None:
     log("cache cleared")
 
 
+def cmd_env(args: argparse.Namespace) -> None:
+    """Emit the Hyprland snippet that pins the pointer across logins. The
+    installer drops this into ~/.config/hypr; print it yourself to check or to
+    wire it up by hand."""
+    size = load_config()["cursor"]["size"]
+    if args.format == "conf":
+        print(f"env = HYPRCURSOR_THEME,{THEME_NAME}")
+        print(f"env = HYPRCURSOR_SIZE,{size}")
+        print(f"env = XCURSOR_THEME,{THEME_NAME}")
+        print(f"env = XCURSOR_SIZE,{size}")
+    else:
+        print(f'hl.env("HYPRCURSOR_THEME", "{THEME_NAME}")')
+        print(f'hl.env("HYPRCURSOR_SIZE", "{size}")')
+        print(f'hl.env("XCURSOR_THEME", "{THEME_NAME}")')
+        print(f'hl.env("XCURSOR_SIZE", "{size}")')
+
+
 def main(argv: list[str] | None = None) -> int:
     global QUIET
     common = argparse.ArgumentParser(add_help=False)
@@ -666,25 +701,27 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("status", parents=[common])
     sub.add_parser("clear-cache", parents=[common])
 
+    sp = sub.add_parser("env", parents=[common])
+    sp.add_argument("--format", choices=("lua", "conf"), default="lua")
+
     args = p.parse_args(argv)
     args.quiet = getattr(args, "quiet", False)
     args.dry_run = getattr(args, "dry_run", False)
     QUIET = args.quiet
 
-    for tool in ("hyprcursor-util", "rsvg-convert"):
-        if not have(tool):
-            die(f"required tool missing: {tool}")
+    if args.cmd != "env":
+        for tool in ("hyprcursor-util", "rsvg-convert"):
+            if not have(tool):
+                die(f"required tool missing: {tool}")
 
-    if args.cmd == "sync":
-        cmd_sync(args, apply=True)
-    elif args.cmd == "build":
-        cmd_sync(args, apply=False)
-    elif args.cmd == "apply":
-        cmd_apply(args)
-    elif args.cmd == "status":
-        cmd_status(args)
-    elif args.cmd == "clear-cache":
-        cmd_clear_cache(args)
+    {
+        "sync": lambda: cmd_sync(args, apply=True),
+        "build": lambda: cmd_sync(args, apply=False),
+        "apply": lambda: cmd_apply(args),
+        "status": lambda: cmd_status(args),
+        "clear-cache": lambda: cmd_clear_cache(args),
+        "env": lambda: cmd_env(args),
+    }[args.cmd]()
     return 0
 
 
