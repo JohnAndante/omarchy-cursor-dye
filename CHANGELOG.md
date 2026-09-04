@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.1.0
+
+- Two more colour presets that drop the accent entirely: `bar-fill` and
+  `bar-outline`, pairing the top bar's *real* colour (`shell.toml`'s
+  `[bar].background`) with a computed dark/light neutral instead - six
+  presets total now.
+- `base`/`outline` colour resolution generalised so `"auto"` works on
+  either slot (previously outline-only); the four v1.0.0 presets are
+  unchanged bit-for-bit.
+- README badges (release, license).
+
 ## v1.0.0
 
 First release.
