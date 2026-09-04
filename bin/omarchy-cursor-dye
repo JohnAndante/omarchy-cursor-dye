@@ -294,22 +294,35 @@ def palette(theme: str | None) -> dict[str, str]:
     out.setdefault("mode", "dark" if luminance(out.get("background", "#000")) < 0.5 else "light")
 
     # The bar's own [bar] section in shell.toml is theme-authored and can
-    # diverge from colors.toml's background/foreground (Omarchy's default
-    # template just mirrors them, but a theme - like a hand-tuned one in
-    # ~/.config/omarchy/themes - may override bar text/background directly).
-    # Only resolvable for the currently-staged theme or a theme that ships its
-    # own shell.toml; otherwise these keys are simply absent and callers fall
-    # back to background/foreground, which is what the default template uses.
-    if colors_file:
+    # diverge from colors.toml's background/foreground - Omarchy's *default*
+    # template just mirrors them, but a theme (a hand-tuned one in
+    # ~/.config/omarchy/themes, or one with a shell.bar.toml overlay) may set
+    # bar text/background directly. That only shows up in the fully-merged
+    # file Omarchy actually renders: THEME_DIR/shell.toml for a theme that
+    # ships one outright, or - since no stock theme does - the *staged*
+    # ~/.local/state/omarchy/current/theme/shell.toml, which is only ground
+    # truth while THEME is the theme actually active right now (the shape
+    # every real caller is in: the hook always names the just-applied theme,
+    # and the CLI defaults to it too). Previewing some other, inactive theme
+    # by name has no such source, and bar/bar_text/bar_active are simply
+    # absent - callers fall back to background/foreground, the same values
+    # the default template would have used anyway.
+    shell_file = None
+    if colors_file and (colors_file.parent / "shell.toml").is_file():
         shell_file = colors_file.parent / "shell.toml"
-        if shell_file.is_file():
-            try:
-                bar = tomllib.loads(shell_file.read_text()).get("bar", {})
-                for src, dest in (("background", "bar"), ("text", "bar_text"), ("active", "bar_active")):
-                    if isinstance(bar.get(src), str):
-                        out[dest] = bar[src]
-            except (tomllib.TOMLDecodeError, OSError):
-                pass
+    elif theme is None or theme == omarchy_theme_name():
+        staged = XDG_STATE / "omarchy/current/theme/shell.toml"
+        if staged.is_file():
+            shell_file = staged
+
+    if shell_file:
+        try:
+            bar = tomllib.loads(shell_file.read_text()).get("bar", {})
+            for src, dest in (("background", "bar"), ("text", "bar_text"), ("active", "bar_active")):
+                if isinstance(bar.get(src), str):
+                    out[dest] = bar[src]
+        except (tomllib.TOMLDecodeError, OSError):
+            pass
 
     return out
 
