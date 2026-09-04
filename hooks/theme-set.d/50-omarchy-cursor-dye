@@ -14,5 +14,12 @@ command -v omarchy-cursor-dye >/dev/null || {
   exit 0
 }
 
+# Deliberately not "sync $1": Omarchy has already swapped $1's colors.toml AND
+# shell.toml into ~/.local/state/omarchy/current/theme/ by the time this hook
+# runs, so a plain `sync` (theme=current) reads that fully-merged, ground-truth
+# state. Naming the theme instead would make us re-derive its palette from its
+# *source* directory, which most stock themes don't ship a shell.toml in at
+# all - the bar colour then silently goes missing. See palette() in bin/omarchy-cursor-dye.
+#
 # Don't block the theme switch on the rebuild.
-omarchy-cursor-dye sync "$1" &
+omarchy-cursor-dye sync &

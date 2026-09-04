@@ -56,6 +56,17 @@ jobs:
           state="$HOME/.local/state/omarchy/current/theme"
           mkdir -p "$state"
           echo citest > "$HOME/.local/state/omarchy/current/theme.name"
+
+          # Also fake it as an *installed* theme, the way a stock Omarchy theme
+          # sits in /usr/share/omarchy/themes: colors.toml only, no shell.toml.
+          # Real stock themes never ship one (only a hand-authored one, like a
+          # user theme, would) - this is the exact shape that once made
+          # `sync <name>` (naming the theme instead of using "current") lose
+          # the bar colour and silently fall back to accent. See the "named
+          # theme" step below.
+          src="$HOME/.config/omarchy/themes/citest"
+          mkdir -p "$src"
+
           cat > "$state/colors.toml" <<'EOF'
           accent = "#e75a50"
           cursor = "#c0af7f"
@@ -79,6 +90,9 @@ jobs:
           active = "#e75a50"
           EOF
 
+          # Same palette, source-theme style: no shell.toml alongside it.
+          cp "$state/colors.toml" "$src/colors.toml"
+
       - name: Install (fetches Bibata, links the command, builds once)
         run: |
           ./install.sh
@@ -95,6 +109,29 @@ jobs:
             printf '[colors]\npreset = "%s"\n' "$preset" > "$cfg"
             omarchy-cursor-dye sync --force
           done
+
+      # Regression test for the bug where "bar" silently became accent:
+      # 1. omarchy-cursor-dye sync (the theme-set hook's call, current/staged
+      #    theme) must resolve bar-fill's fill to the real bar colour.
+      # 2. Naming the theme instead (the shape it used to be called with) must
+      #    still degrade safely - background, never accent - even though it
+      #    can't see the staged, fully-merged shell.toml at all.
+      - name: "Regression: bar-fill never resolves to accent"
+        run: |
+          set -e
+          cfg="$(omarchy-cursor-dye config --path)"
+          printf '[colors]\npreset = "bar-fill"\n' > "$cfg"
+
+          omarchy-cursor-dye sync --force
+          base=$(omarchy-cursor-dye status | awk -F'base ' '/^colours/{print $2}' | cut -d' ' -f1)
+          [ "$base" = "#101010" ] || { echo "::error::current-theme sync resolved bar-fill's fill to $base, expected #101010 (the fixture's bar colour)"; exit 1; }
+
+          omarchy-cursor-dye sync citest --force
+          base=$(omarchy-cursor-dye status | awk -F'base ' '/^colours/{print $2}' | cut -d' ' -f1)
+          [ "$base" != "#e75a50" ] || { echo "::error::naming the theme leaked accent (#e75a50) into bar-fill's fill"; exit 1; }
+
+          printf '[colors]\npreset = "accent-fill"\n' > "$cfg"
+          omarchy-cursor-dye sync --force
 
       - name: Build every cursor style
         run: |

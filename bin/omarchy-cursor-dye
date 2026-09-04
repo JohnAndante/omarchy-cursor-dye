@@ -349,12 +349,22 @@ def compute_colors(cfg: dict, pal: dict[str, str], overrides: dict[str, str | No
         die(f"unknown colour preset {cc.get('preset')!r} - pick one of: {', '.join(PRESETS)}")
     slots = {s: cc[s] if s in cc else preset[s] for s in ("base", "outline", "watch")}
 
+    # Fallbacks if the requested key is missing from the palette. Only "accent"
+    # gets the accent-flavoured chain (substitutes of similar intent); every
+    # other key - "bar" in particular - falls back to a plain neutral, never
+    # to accent. Silently turning a no-accent preset (bar-fill, bar-outline,
+    # accent-outline-bar) into accent because "bar" wasn't resolvable would
+    # defeat the entire point of picking it.
+    base_fallbacks = (
+        ("cursor", "color4", "color1", "foreground", "background")
+        if slots["base"] == "accent"
+        else ("background",)
+    )
+
     # "auto" can land on either base or outline (never both, in the built-in
     # presets) - resolve whichever slot has a real colour first, then compute
     # the other as the theme's dark/light neutral, contrast-checked against it.
-    base = overrides.get("base") or resolve_color(
-        slots["base"], pal, fallbacks=("accent", "cursor", "color4", "color1", "foreground", "background")
-    )
+    base = overrides.get("base") or resolve_color(slots["base"], pal, fallbacks=base_fallbacks)
     outline = overrides.get("outline") or resolve_color(slots["outline"], pal, fallbacks=("background",))
 
     if base is None and outline is None:
