@@ -48,6 +48,7 @@ else
 fi
 
 install -Dm644 "$REPO_DIR/share/cursors.toml" "$DATA_DIR/cursors.toml"
+install -Dm644 "$REPO_DIR/share/cursors-right.toml" "$DATA_DIR/cursors-right.toml"
 
 # --- the command -------------------------------------------------------------
 mkdir -p "$BIN_DIR"

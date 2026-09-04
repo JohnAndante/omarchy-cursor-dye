@@ -147,6 +147,63 @@ jobs:
           printf '[colors]\npreset = "accent-fill"\n' > "$cfg"
           omarchy-cursor-dye sync --force
 
+      - name: Bad input fails cleanly, no traceback
+        run: |
+          set -e
+          cfg="$(omarchy-cursor-dye config --path)"
+
+          out=$(omarchy-cursor-dye sync --base '#gggggg' --dry-run 2>&1) && exit 1
+          echo "$out" | grep -q Traceback && { echo "::error::raw traceback on bad hex"; exit 1; }
+
+          cp "$cfg" /tmp/config.bak
+          echo 'not toml [[[' > "$cfg"
+          out=$(omarchy-cursor-dye status 2>&1) && { cp /tmp/config.bak "$cfg"; exit 1; }
+          echo "$out" | grep -q Traceback && { echo "::error::raw traceback on malformed config.toml"; cp /tmp/config.bak "$cfg"; exit 1; }
+          cp /tmp/config.bak "$cfg"
+
+          omarchy-cursor-dye clear-cache
+          out=$(omarchy-cursor-dye sync --dry-run --base '#ff5fd7' 2>&1) || { echo "::error::--dry-run failed on an uncached colour set"; echo "$out"; exit 1; }
+          omarchy-cursor-dye sync --force
+
+      - name: "Regression: refreshed artwork invalidates the cache, drift fails loudly"
+        run: |
+          set -e
+          svg="$HOME/.local/share/omarchy-cursor-dye/svg/modern/left_ptr.svg"
+          omarchy-cursor-dye sync --force
+
+          touch "$svg"
+          after=$(omarchy-cursor-dye sync 2>&1)
+          echo "$after" | grep -q '^:: colours unchanged$' && { echo "::error::a touched SVG didn't invalidate the cache"; exit 1; }
+
+          cp "$svg" /tmp/left_ptr.bak
+          sed -i 's/#00FF00/#3d3d3d/gi; s/#0000FF/#c8c8c8/gi' "$svg"
+          out=$(omarchy-cursor-dye sync --force 2>&1) && { echo "::error::placeholder drift built successfully instead of failing"; cp /tmp/left_ptr.bak "$svg"; exit 1; }
+          echo "$out" | grep -q "no placeholder colour" || { echo "::error::wrong/missing error for placeholder drift"; echo "$out"; cp /tmp/left_ptr.bak "$svg"; exit 1; }
+          cp /tmp/left_ptr.bak "$svg"
+          omarchy-cursor-dye sync --force
+
+      - name: "Regression: config typos are rejected, apply failures are reported"
+        run: |
+          set -e
+          cfg="$(omarchy-cursor-dye config --path)"
+          cp "$cfg" /tmp/config.bak
+
+          printf '[colours]\npreset = "bar-fill"\n' > "$cfg"
+          out=$(omarchy-cursor-dye status 2>&1) && { echo "::error::typo'd section wasn't rejected"; cp /tmp/config.bak "$cfg"; exit 1; }
+          echo "$out" | grep -q "unknown section" || { echo "::error::wrong error for a typo'd section"; echo "$out"; cp /tmp/config.bak "$cfg"; exit 1; }
+
+          printf '[xcursor]\nsizes = 24\n' > "$cfg"
+          out=$(omarchy-cursor-dye status 2>&1) && { echo "::error::non-list xcursor.sizes wasn't rejected"; cp /tmp/config.bak "$cfg"; exit 1; }
+          echo "$out" | grep -q "xcursor.sizes" || { echo "::error::wrong error for xcursor.sizes"; echo "$out"; cp /tmp/config.bak "$cfg"; exit 1; }
+          cp /tmp/config.bak "$cfg"
+
+          mkdir -p /tmp/fake-bin
+          printf '#!/bin/bash\necho "dead socket" >&2\nexit 1\n' > /tmp/fake-bin/hyprctl
+          chmod +x /tmp/fake-bin/hyprctl
+          out=$(PATH="/tmp/fake-bin:$PATH" omarchy-cursor-dye sync --force 2>&1)
+          echo "$out" | grep -q "hyprctl setcursor" || { echo "::error::a failing hyprctl wasn't reported"; echo "$out"; exit 1; }
+          omarchy-cursor-dye sync --force
+
       - name: Validate the installed theme
         run: |
           set -e

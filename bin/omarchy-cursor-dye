@@ -27,6 +27,7 @@ Options:
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import json
 import os
@@ -37,6 +38,7 @@ import subprocess
 import sys
 import tomllib
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
 THEME_NAME = "omarchy-dye"
@@ -47,6 +49,8 @@ PLACEHOLDERS = {
     "outline": ("#0000ff",),
     "watch": ("#ff0000", "#fe0000"),
 }
+
+ANY_HEX = re.compile(r"#[0-9a-fA-F]{3,8}")
 
 XDG_DATA = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
 XDG_CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
@@ -93,6 +97,14 @@ DEFAULT_CONFIG = {
     "colors": {"preset": "accent-fill"},
     "cursor": {"size": 24, "style": "modern"},
     "xcursor": {"sizes": [24, 32, 48, 64], "anim_sizes": [24, 32]},
+}
+
+# Every key config.toml may set. base/outline/watch have no default (they only
+# override the preset's slot), so DEFAULT_CONFIG can't stand in for this.
+CONFIG_KEYS = {
+    "colors": ("preset", "base", "outline", "watch"),
+    "cursor": ("size", "style"),
+    "xcursor": ("sizes", "anim_sizes"),
 }
 
 PALETTE_KEYS = (
@@ -280,7 +292,11 @@ def palette(theme: str | None) -> dict[str, str]:
             + ". Is Omarchy installed and a theme applied?"
         )
 
-    out.setdefault("mode", "dark" if luminance(out.get("background", "#000")) < 0.5 else "light")
+    try:
+        dark = luminance(out.get("background", "#000")) < 0.5
+    except ValueError:
+        dark = True
+    out.setdefault("mode", "dark" if dark else "light")
 
     # A theme's own bar colours only exist in the fully-merged shell.toml Omarchy
     # renders. Almost no theme ships one in its source dir, so the real source is
@@ -311,7 +327,10 @@ def palette(theme: str | None) -> dict[str, str]:
 def resolve_color(spec: str, pal: dict[str, str], *, fallbacks: tuple[str, ...] = ()) -> str | None:
     spec = spec.strip()
     if spec.startswith("#"):
-        return to_hex(parse_hex(spec))
+        try:
+            return to_hex(parse_hex(spec))
+        except ValueError:
+            return None
     if spec == "auto":
         return None
     for key in (spec, *fallbacks):
@@ -398,6 +417,29 @@ def svg_root(style: str) -> Path:
     return d
 
 
+def _svg_files(d: Path):
+    # A Bibata style dir is symlinks into svg/groups/, animated frame dirs
+    # included - Path.rglob() would not follow those.
+    for p in sorted(d.iterdir()):
+        if p.is_dir():
+            yield from _svg_files(p)
+        elif p.is_file():
+            yield p
+
+
+def art_fingerprint(style: str) -> str:
+    """Digest of the artwork a build would actually use: the spec by content
+    (install.sh rewrites it every run), the SVGs by size and mtime - dozens of
+    files, no need to read them."""
+    h = hashlib.sha256()
+    h.update(first_existing(spec_candidates(style), "cursors.toml").read_bytes())
+    root = svg_root(style)
+    for p in _svg_files(root):
+        st = p.stat()
+        h.update(f"{p.relative_to(root)}\0{st.st_size}\0{st.st_mtime_ns}\0".encode())
+    return h.hexdigest()[:16]
+
+
 # --------------------------------------------------------------------------- #
 # recolour + build
 # --------------------------------------------------------------------------- #
@@ -409,10 +451,12 @@ def _sub_map(colors: dict[str, str]) -> list[tuple[re.Pattern, str]]:
     return subs
 
 
-def recolor(text: str, subs: list[tuple[re.Pattern, str]]) -> str:
+def recolor(text: str, subs: list[tuple[re.Pattern, str]]) -> tuple[str, int]:
+    hits = 0
     for pat, repl in subs:
-        text = pat.sub(repl, text)
-    return text
+        text, n = pat.subn(repl, text)
+        hits += n
+    return text, hits
 
 
 def frames_for(shape: dict, style_dir: Path) -> list[Path]:
@@ -447,10 +491,23 @@ def build_theme(colors: dict[str, str], cfg: dict, spec: list[dict], out_dir: Pa
             warn(f"missing SVG for {shape['name']}, skipping")
             continue
         dsts = []
+        hits = 0
+        dyeable = False
         for i, src in enumerate(srcs, 1):
             dst = sdir / (f"{i:03d}.svg" if shape["animated"] else "cursor.svg")
-            dst.write_text(recolor(src.read_text(), subs))
+            text = src.read_text()
+            dyeable = dyeable or ANY_HEX.search(text) is not None
+            out, n = recolor(text, subs)
+            dst.write_text(out)
+            hits += n
             dsts.append(dst)
+        # A couple of Bibata shapes (X_cursor, wayland-cursor) are drawn in plain
+        # black and white and have nothing to dye. Hex colours but no placeholder
+        # match is the other case: the placeholder set drifted, and shipping an
+        # undyed cursor is worse than failing.
+        if not hits and dyeable:
+            die(f"no placeholder colour in {shape['name']}'s SVGs ({style_dir}) - "
+                f"expected one of {', '.join(p for ps in PLACEHOLDERS.values() for p in ps)}")
         recolored[shape["name"]] = dsts
 
         overrides = [o for o in shape["overrides"] if o != shape["name"]]
@@ -482,21 +539,33 @@ def build_theme(colors: dict[str, str], cfg: dict, spec: list[dict], out_dir: Pa
     if compiled is None:
         die("hyprcursor-util produced no theme")
 
-    # 3. assemble the final theme dir: hyprcursor + xcursor side by side
-    final = out_dir / "theme"
-    if final.exists():
-        shutil.rmtree(final)
-    final.mkdir(parents=True)
-    shutil.copy(compiled / "manifest.hl", final / "manifest.hl")
-    shutil.copytree(compiled / "hyprcursors", final / "hyprcursors")
-    (final / "index.theme").write_text(
+    # 3. assemble the final theme dir: hyprcursor + xcursor side by side.
+    # Built under a scratch name and renamed into place only once everything
+    # succeeded, so an interrupted build can never look like a cache hit.
+    partial = out_dir / "theme.partial"
+    if partial.exists():
+        shutil.rmtree(partial)
+    partial.mkdir(parents=True)
+    shutil.copy(compiled / "manifest.hl", partial / "manifest.hl")
+    shutil.copytree(compiled / "hyprcursors", partial / "hyprcursors")
+    (partial / "index.theme").write_text(
         "[Icon Theme]\n"
         f"Name={THEME_NAME}\n"
         "Comment=Dyed to the current Omarchy theme by omarchy-cursor-dye\n"
         "Inherits=Adwaita\n"
     )
 
-    _build_xcursor(recolored, spec, cfg, final / "cursors")
+    _build_xcursor(recolored, spec, cfg, partial / "cursors")
+
+    # Nothing reads work/ or hypr/ again; they only earn their keep on a build
+    # that failed, where they're left behind for inspection.
+    shutil.rmtree(work, ignore_errors=True)
+    shutil.rmtree(hypr_out, ignore_errors=True)
+
+    final = out_dir / "theme"
+    if final.exists():
+        shutil.rmtree(final)
+    os.replace(partial, final)
     log(f"built {len(recolored)} shapes")
 
 
@@ -594,21 +663,40 @@ def apply_cursor(size: int, *, dry: bool = False) -> None:
         ["hyprctl", "setenv", "HYPRCURSOR_THEME", THEME_NAME],
         ["hyprctl", "setenv", "HYPRCURSOR_SIZE", str(size)],
     ]
+    failed = 0
+    seen: set[tuple[str, str]] = set()
     for cmd in steps:
         if not have(cmd[0]):
             continue
         if dry:
             log("would run: " + " ".join(cmd))
             continue
-        subprocess.run(cmd, capture_output=True)
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode != 0:
+            failed += 1
+            # hyprctl reports "couldn't connect" on stdout, gsettings on stderr.
+            msg = " ".join((r.stderr or r.stdout).split())
+            # One dead socket fails five hyprctl steps identically; hook.log is
+            # append-only, so report each distinct failure once.
+            if (cmd[0], msg) not in seen:
+                seen.add((cmd[0], msg))
+                warn(f"{' '.join(cmd)} exited {r.returncode}" + (f": {msg}" if msg else ""))
 
-    # XWayland / legacy toolkits read ~/.icons/default/index.theme
+    # XWayland / legacy toolkits read ~/.local/share/icons/default/index.theme
     default_theme = ICONS_DIR / "default" / "index.theme"
     if dry:
         log(f"would point {default_theme} at {THEME_NAME}")
+        return
+    default_theme.parent.mkdir(parents=True, exist_ok=True)
+    default_theme.write_text(f"[Icon Theme]\nName=Default\nInherits={THEME_NAME}\n")
+
+    # The theme is on disk either way, so a dead hyprctl (no session, ssh) is
+    # not fatal - but it must not be reported as a successful apply.
+    if failed:
+        warn(f"{THEME_NAME} @ {size}px is installed, but {failed} live-session "
+             "command(s) failed - the running session may still show the old cursor")
     else:
-        default_theme.parent.mkdir(parents=True, exist_ok=True)
-        default_theme.write_text(f"[Icon Theme]\nName=Default\nInherits={THEME_NAME}\n")
+        log(f"applied {THEME_NAME} @ {size}px")
 
 
 # --------------------------------------------------------------------------- #
@@ -628,29 +716,62 @@ def write_state(st: dict) -> None:
     STATE_FILE.write_text(json.dumps(st, indent=2))
 
 
+def _px(val: object, what: str) -> int:
+    try:
+        n = 0 if isinstance(val, bool) else int(val)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        n = 0
+    if n <= 0:
+        die(f"{CONFIG_FILE}: {what} must be a positive number of pixels, got {val!r}")
+    return n
+
+
 def load_config() -> dict:
     cfg = {k: dict(v) for k, v in DEFAULT_CONFIG.items()}
     if CONFIG_FILE.is_file():
-        user = tomllib.loads(CONFIG_FILE.read_text())
+        try:
+            user = tomllib.loads(CONFIG_FILE.read_text())
+        except tomllib.TOMLDecodeError as e:
+            die(f"{CONFIG_FILE}: {e}")
+        # Merging blind would let a typo'd section or key sit in the config
+        # read by nothing at all - the edit silently does nothing, and the
+        # tool reports the default it quietly used as if it were asked for.
         for section, values in user.items():
-            cfg.setdefault(section, {}).update(values)
+            if section not in CONFIG_KEYS:
+                die(f"{CONFIG_FILE}: unknown section [{section}] - expected "
+                    + " ".join(f"[{s}]" for s in CONFIG_KEYS))
+            if not isinstance(values, dict):
+                die(f"{CONFIG_FILE}: [{section}] must be a section, got {values!r}")
+            unknown = [k for k in values if k not in CONFIG_KEYS[section]]
+            if unknown:
+                die(f"{CONFIG_FILE}: unknown key{'s' if len(unknown) > 1 else ''} "
+                    f"in [{section}]: {', '.join(unknown)} - "
+                    f"{section} takes: {', '.join(CONFIG_KEYS[section])}")
+            cfg[section].update(values)
+
     style = cfg["cursor"]["style"]
     if style not in STYLES:
         die(f"unknown cursor style {style!r} - pick one of: {', '.join(STYLES)}")
-    try:
-        cfg["cursor"]["size"] = int(cfg["cursor"]["size"])
-    except (TypeError, ValueError):
-        die(f"cursor.size must be a number, got {cfg['cursor']['size']!r}")
+    cfg["cursor"]["size"] = _px(cfg["cursor"]["size"], "cursor.size")
+    for key in ("sizes", "anim_sizes"):
+        val = cfg["xcursor"][key]
+        if not isinstance(val, list) or not val:
+            die(f"{CONFIG_FILE}: xcursor.{key} must be a non-empty list of pixel "
+                f"sizes, e.g. [24, 32] - got {val!r}")
+        cfg["xcursor"][key] = [_px(v, f"xcursor.{key}") for v in val]
     return cfg
 
 
 def build_hash(colors: dict[str, str], cfg: dict) -> str:
+    # "art" is what makes a refreshed Bibata (or a regenerated spec) miss the
+    # cache: without it the old cursors are served as a hit, silently.
     payload = json.dumps(
         {
             "colors": colors,
             "style": cfg["cursor"]["style"],
             "sizes": sorted(cfg["xcursor"]["sizes"]),
             "anim": sorted(cfg["xcursor"]["anim_sizes"]),
+            "art": art_fingerprint(cfg["cursor"]["style"]),
             "v": 1,
         },
         sort_keys=True,
@@ -658,21 +779,45 @@ def build_hash(colors: dict[str, str], cfg: dict) -> str:
     return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 
+@contextmanager
+def build_lock():
+    """Serialise build+install across processes: the theme-set hook backgrounds
+    `sync`, so two theme switches in a row otherwise race over the same cache
+    entry and the same install paths. Lives beside state.json rather than in the
+    cache so `clear-cache` can't pull it out from under a running build."""
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(STATE_FILE.parent / "lock", "w") as fh:
+        try:
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            log("another run is building - waiting for it")
+            fcntl.flock(fh, fcntl.LOCK_EX)
+        yield
+
+
 def install_from_cache(h: str, *, dry: bool = False) -> None:
     src = CACHE_DIR / h / "theme"
-    if not src.is_dir():
-        die(f"cache miss for {h}")
     if dry:
+        # In a dry run _ensure_cached() never actually builds, so `src` may
+        # not exist yet - that's the normal case (a new colour set), not an
+        # error.
         log(f"would install {src} -> {DEST}")
         return
+    if not src.is_dir():
+        die(f"cache miss for {h}")
     ICONS_DIR.mkdir(parents=True, exist_ok=True)
     staging = ICONS_DIR / f".{THEME_NAME}.new"
-    if staging.exists():
-        shutil.rmtree(staging)
+    previous = ICONS_DIR / f".{THEME_NAME}.old"
+    for scratch in (staging, previous):
+        if scratch.exists():
+            shutil.rmtree(scratch)
     shutil.copytree(src, staging, symlinks=True)
+    # Swap by rename, never by delete-then-copy: the old theme stays in place
+    # until the new one has landed, so a crash mid-swap can't leave DEST gone.
     if DEST.exists():
-        shutil.rmtree(DEST)
+        DEST.rename(previous)
     staging.rename(DEST)
+    shutil.rmtree(previous, ignore_errors=True)
 
 
 # --------------------------------------------------------------------------- #
@@ -708,34 +853,34 @@ def cmd_sync(args: argparse.Namespace, *, apply: bool) -> None:
     cfg, size, theme, colors, h = _resolve(args)
     log(f"theme {theme or '(current)'}  base {colors['base']}  outline {colors['outline']}  watch {colors['watch']}")
 
-    st = read_state()
-    installed = st.get("hash") == h and DEST.is_dir()
+    with nullcontext() if args.dry_run else build_lock():
+        st = read_state()
+        installed = st.get("hash") == h and DEST.is_dir()
 
-    if apply and installed and not args.force:
-        log("colours unchanged")
+        if apply and installed and not args.force:
+            log("colours unchanged")
+            if args.dry_run:
+                apply_cursor(size, dry=True)
+            else:
+                apply_cursor(size)
+                # The colours are unchanged but --size may not be: state.json is what
+                # `apply` and `status` read, so it has to record what was just applied.
+                write_state({**st, "size": size, "theme": theme})
+            return
+
+        _ensure_cached(h, colors, cfg, force=args.force, dry=args.dry_run)
+
+        if not apply:  # `build`: populate the cache only, never touch the session
+            return
+
         if args.dry_run:
+            install_from_cache(h, dry=True)
             apply_cursor(size, dry=True)
-        else:
-            apply_cursor(size)
-            # The colours are unchanged but --size may not be: state.json is what
-            # `apply` and `status` read, so it has to record what was just applied.
-            write_state({**st, "size": size, "theme": theme})
-        return
+            return
 
-    _ensure_cached(h, colors, cfg, force=args.force, dry=args.dry_run)
-
-    if not apply:  # `build`: populate the cache only, never touch the session
-        return
-
-    if args.dry_run:
-        install_from_cache(h, dry=True)
-        apply_cursor(size, dry=True)
-        return
-
-    install_from_cache(h)
-    write_state({"hash": h, "colors": colors, "size": size, "theme": theme})
-    apply_cursor(size)
-    log(f"applied {THEME_NAME} @ {size}px")
+        install_from_cache(h)
+        write_state({"hash": h, "colors": colors, "size": size, "theme": theme})
+        apply_cursor(size)
 
 
 def _ov(val: str | None, pal: dict[str, str]) -> str | None:
@@ -750,8 +895,6 @@ def cmd_apply(args: argparse.Namespace) -> None:
         die("nothing built yet - run: omarchy-cursor-dye sync")
     size = args.size or st.get("size") or load_config()["cursor"]["size"]
     apply_cursor(size, dry=args.dry_run)
-    if not args.dry_run:
-        log(f"applied {THEME_NAME} @ {size}px")
 
 
 def cmd_status(_args: argparse.Namespace) -> None:
@@ -776,8 +919,9 @@ def cmd_clear_cache(args: argparse.Namespace) -> None:
     if args.dry_run:
         log(f"would remove {CACHE_DIR}")
         return
-    if CACHE_DIR.exists():
-        shutil.rmtree(CACHE_DIR)
+    with build_lock():
+        if CACHE_DIR.exists():
+            shutil.rmtree(CACHE_DIR)
     log("cache cleared")
 
 
