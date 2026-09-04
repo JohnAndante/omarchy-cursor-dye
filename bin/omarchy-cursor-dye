@@ -682,7 +682,7 @@ def apply_cursor(size: int, *, dry: bool = False) -> None:
                 seen.add((cmd[0], msg))
                 warn(f"{' '.join(cmd)} exited {r.returncode}" + (f": {msg}" if msg else ""))
 
-    # XWayland / legacy toolkits read ~/.icons/default/index.theme
+    # XWayland / legacy toolkits read ~/.local/share/icons/default/index.theme
     default_theme = ICONS_DIR / "default" / "index.theme"
     if dry:
         log(f"would point {default_theme} at {THEME_NAME}")

@@ -156,7 +156,7 @@ omarchy theme set X
                                    hyprcursor-util --create        → hyprcursors/*.hlc
                                    rsvg-convert + xcursorgen        → cursors/* (+ alias symlinks)
                                    swap into ~/.local/share/icons/omarchy-dye/
-                 4. hyprctl setcursor + gsettings + ~/.icons/default/index.theme
+                 4. hyprctl setcursor + gsettings + ~/.local/share/icons/default/index.theme
 ```
 
 The theme name (`omarchy-dye`) never changes — only its contents — so the Hyprland env block is written once and left alone.

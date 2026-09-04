@@ -5,8 +5,8 @@
 # snake-cased name as $1. Builds are cached per colour set, so a repeat theme
 # costs nothing.
 
-exec >>"${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-cursor-dye/hook.log" 2>&1
 mkdir -p "${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-cursor-dye"
+exec >>"${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-cursor-dye/hook.log" 2>&1
 echo "--- $(date -Is)  theme-set $1"
 
 command -v omarchy-cursor-dye >/dev/null || {
