@@ -280,7 +280,11 @@ def palette(theme: str | None) -> dict[str, str]:
             + ". Is Omarchy installed and a theme applied?"
         )
 
-    out.setdefault("mode", "dark" if luminance(out.get("background", "#000")) < 0.5 else "light")
+    try:
+        dark = luminance(out.get("background", "#000")) < 0.5
+    except ValueError:
+        dark = True
+    out.setdefault("mode", "dark" if dark else "light")
 
     # A theme's own bar colours only exist in the fully-merged shell.toml Omarchy
     # renders. Almost no theme ships one in its source dir, so the real source is
@@ -311,7 +315,10 @@ def palette(theme: str | None) -> dict[str, str]:
 def resolve_color(spec: str, pal: dict[str, str], *, fallbacks: tuple[str, ...] = ()) -> str | None:
     spec = spec.strip()
     if spec.startswith("#"):
-        return to_hex(parse_hex(spec))
+        try:
+            return to_hex(parse_hex(spec))
+        except ValueError:
+            return None
     if spec == "auto":
         return None
     for key in (spec, *fallbacks):
@@ -631,7 +638,10 @@ def write_state(st: dict) -> None:
 def load_config() -> dict:
     cfg = {k: dict(v) for k, v in DEFAULT_CONFIG.items()}
     if CONFIG_FILE.is_file():
-        user = tomllib.loads(CONFIG_FILE.read_text())
+        try:
+            user = tomllib.loads(CONFIG_FILE.read_text())
+        except tomllib.TOMLDecodeError as e:
+            die(f"{CONFIG_FILE}: {e}")
         for section, values in user.items():
             cfg.setdefault(section, {}).update(values)
     style = cfg["cursor"]["style"]
@@ -660,11 +670,14 @@ def build_hash(colors: dict[str, str], cfg: dict) -> str:
 
 def install_from_cache(h: str, *, dry: bool = False) -> None:
     src = CACHE_DIR / h / "theme"
-    if not src.is_dir():
-        die(f"cache miss for {h}")
     if dry:
+        # In a dry run _ensure_cached() never actually builds, so `src` may
+        # not exist yet - that's the normal case (a new colour set), not an
+        # error.
         log(f"would install {src} -> {DEST}")
         return
+    if not src.is_dir():
+        die(f"cache miss for {h}")
     ICONS_DIR.mkdir(parents=True, exist_ok=True)
     staging = ICONS_DIR / f".{THEME_NAME}.new"
     if staging.exists():

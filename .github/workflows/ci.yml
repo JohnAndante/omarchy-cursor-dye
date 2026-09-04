@@ -147,6 +147,24 @@ jobs:
           printf '[colors]\npreset = "accent-fill"\n' > "$cfg"
           omarchy-cursor-dye sync --force
 
+      - name: Bad input fails cleanly, no traceback
+        run: |
+          set -e
+          cfg="$(omarchy-cursor-dye config --path)"
+
+          out=$(omarchy-cursor-dye sync --base '#gggggg' --dry-run 2>&1) && exit 1
+          echo "$out" | grep -q Traceback && { echo "::error::raw traceback on bad hex"; exit 1; }
+
+          cp "$cfg" /tmp/config.bak
+          echo 'not toml [[[' > "$cfg"
+          out=$(omarchy-cursor-dye status 2>&1) && { cp /tmp/config.bak "$cfg"; exit 1; }
+          echo "$out" | grep -q Traceback && { echo "::error::raw traceback on malformed config.toml"; cp /tmp/config.bak "$cfg"; exit 1; }
+          cp /tmp/config.bak "$cfg"
+
+          omarchy-cursor-dye clear-cache
+          out=$(omarchy-cursor-dye sync --dry-run --base '#ff5fd7' 2>&1) || { echo "::error::--dry-run failed on an uncached colour set"; echo "$out"; exit 1; }
+          omarchy-cursor-dye sync --force
+
       - name: Validate the installed theme
         run: |
           set -e
