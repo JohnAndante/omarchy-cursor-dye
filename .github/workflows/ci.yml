@@ -80,7 +80,9 @@ jobs:
           EOF
 
       - name: Install (fetches Bibata, links the command, builds once)
-        run: ./install.sh
+        run: |
+          ./install.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: status
         run: omarchy-cursor-dye status
