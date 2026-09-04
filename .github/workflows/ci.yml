@@ -182,6 +182,28 @@ jobs:
           cp /tmp/left_ptr.bak "$svg"
           omarchy-cursor-dye sync --force
 
+      - name: "Regression: config typos are rejected, apply failures are reported"
+        run: |
+          set -e
+          cfg="$(omarchy-cursor-dye config --path)"
+          cp "$cfg" /tmp/config.bak
+
+          printf '[colours]\npreset = "bar-fill"\n' > "$cfg"
+          out=$(omarchy-cursor-dye status 2>&1) && { echo "::error::typo'd section wasn't rejected"; cp /tmp/config.bak "$cfg"; exit 1; }
+          echo "$out" | grep -q "unknown section" || { echo "::error::wrong error for a typo'd section"; echo "$out"; cp /tmp/config.bak "$cfg"; exit 1; }
+
+          printf '[xcursor]\nsizes = 24\n' > "$cfg"
+          out=$(omarchy-cursor-dye status 2>&1) && { echo "::error::non-list xcursor.sizes wasn't rejected"; cp /tmp/config.bak "$cfg"; exit 1; }
+          echo "$out" | grep -q "xcursor.sizes" || { echo "::error::wrong error for xcursor.sizes"; echo "$out"; cp /tmp/config.bak "$cfg"; exit 1; }
+          cp /tmp/config.bak "$cfg"
+
+          mkdir -p /tmp/fake-bin
+          printf '#!/bin/bash\necho "dead socket" >&2\nexit 1\n' > /tmp/fake-bin/hyprctl
+          chmod +x /tmp/fake-bin/hyprctl
+          out=$(PATH="/tmp/fake-bin:$PATH" omarchy-cursor-dye sync --force 2>&1)
+          echo "$out" | grep -q "hyprctl setcursor" || { echo "::error::a failing hyprctl wasn't reported"; echo "$out"; exit 1; }
+          omarchy-cursor-dye sync --force
+
       - name: Validate the installed theme
         run: |
           set -e

@@ -99,6 +99,14 @@ DEFAULT_CONFIG = {
     "xcursor": {"sizes": [24, 32, 48, 64], "anim_sizes": [24, 32]},
 }
 
+# Every key config.toml may set. base/outline/watch have no default (they only
+# override the preset's slot), so DEFAULT_CONFIG can't stand in for this.
+CONFIG_KEYS = {
+    "colors": ("preset", "base", "outline", "watch"),
+    "cursor": ("size", "style"),
+    "xcursor": ("sizes", "anim_sizes"),
+}
+
 PALETTE_KEYS = (
     "accent, foreground, background, cursor, selection_background,\n"
     "  color0..color15  (color0 is usually the background, color1..6 the hues),\n"
@@ -655,21 +663,40 @@ def apply_cursor(size: int, *, dry: bool = False) -> None:
         ["hyprctl", "setenv", "HYPRCURSOR_THEME", THEME_NAME],
         ["hyprctl", "setenv", "HYPRCURSOR_SIZE", str(size)],
     ]
+    failed = 0
+    seen: set[tuple[str, str]] = set()
     for cmd in steps:
         if not have(cmd[0]):
             continue
         if dry:
             log("would run: " + " ".join(cmd))
             continue
-        subprocess.run(cmd, capture_output=True)
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode != 0:
+            failed += 1
+            # hyprctl reports "couldn't connect" on stdout, gsettings on stderr.
+            msg = " ".join((r.stderr or r.stdout).split())
+            # One dead socket fails five hyprctl steps identically; hook.log is
+            # append-only, so report each distinct failure once.
+            if (cmd[0], msg) not in seen:
+                seen.add((cmd[0], msg))
+                warn(f"{' '.join(cmd)} exited {r.returncode}" + (f": {msg}" if msg else ""))
 
     # XWayland / legacy toolkits read ~/.icons/default/index.theme
     default_theme = ICONS_DIR / "default" / "index.theme"
     if dry:
         log(f"would point {default_theme} at {THEME_NAME}")
+        return
+    default_theme.parent.mkdir(parents=True, exist_ok=True)
+    default_theme.write_text(f"[Icon Theme]\nName=Default\nInherits={THEME_NAME}\n")
+
+    # The theme is on disk either way, so a dead hyprctl (no session, ssh) is
+    # not fatal - but it must not be reported as a successful apply.
+    if failed:
+        warn(f"{THEME_NAME} @ {size}px is installed, but {failed} live-session "
+             "command(s) failed - the running session may still show the old cursor")
     else:
-        default_theme.parent.mkdir(parents=True, exist_ok=True)
-        default_theme.write_text(f"[Icon Theme]\nName=Default\nInherits={THEME_NAME}\n")
+        log(f"applied {THEME_NAME} @ {size}px")
 
 
 # --------------------------------------------------------------------------- #
@@ -689,6 +716,16 @@ def write_state(st: dict) -> None:
     STATE_FILE.write_text(json.dumps(st, indent=2))
 
 
+def _px(val: object, what: str) -> int:
+    try:
+        n = 0 if isinstance(val, bool) else int(val)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        n = 0
+    if n <= 0:
+        die(f"{CONFIG_FILE}: {what} must be a positive number of pixels, got {val!r}")
+    return n
+
+
 def load_config() -> dict:
     cfg = {k: dict(v) for k, v in DEFAULT_CONFIG.items()}
     if CONFIG_FILE.is_file():
@@ -696,15 +733,32 @@ def load_config() -> dict:
             user = tomllib.loads(CONFIG_FILE.read_text())
         except tomllib.TOMLDecodeError as e:
             die(f"{CONFIG_FILE}: {e}")
+        # Merging blind would let a typo'd section or key sit in the config
+        # read by nothing at all - the edit silently does nothing, and the
+        # tool reports the default it quietly used as if it were asked for.
         for section, values in user.items():
-            cfg.setdefault(section, {}).update(values)
+            if section not in CONFIG_KEYS:
+                die(f"{CONFIG_FILE}: unknown section [{section}] - expected "
+                    + " ".join(f"[{s}]" for s in CONFIG_KEYS))
+            if not isinstance(values, dict):
+                die(f"{CONFIG_FILE}: [{section}] must be a section, got {values!r}")
+            unknown = [k for k in values if k not in CONFIG_KEYS[section]]
+            if unknown:
+                die(f"{CONFIG_FILE}: unknown key{'s' if len(unknown) > 1 else ''} "
+                    f"in [{section}]: {', '.join(unknown)} - "
+                    f"{section} takes: {', '.join(CONFIG_KEYS[section])}")
+            cfg[section].update(values)
+
     style = cfg["cursor"]["style"]
     if style not in STYLES:
         die(f"unknown cursor style {style!r} - pick one of: {', '.join(STYLES)}")
-    try:
-        cfg["cursor"]["size"] = int(cfg["cursor"]["size"])
-    except (TypeError, ValueError):
-        die(f"cursor.size must be a number, got {cfg['cursor']['size']!r}")
+    cfg["cursor"]["size"] = _px(cfg["cursor"]["size"], "cursor.size")
+    for key in ("sizes", "anim_sizes"):
+        val = cfg["xcursor"][key]
+        if not isinstance(val, list) or not val:
+            die(f"{CONFIG_FILE}: xcursor.{key} must be a non-empty list of pixel "
+                f"sizes, e.g. [24, 32] - got {val!r}")
+        cfg["xcursor"][key] = [_px(v, f"xcursor.{key}") for v in val]
     return cfg
 
 
@@ -827,7 +881,6 @@ def cmd_sync(args: argparse.Namespace, *, apply: bool) -> None:
         install_from_cache(h)
         write_state({"hash": h, "colors": colors, "size": size, "theme": theme})
         apply_cursor(size)
-        log(f"applied {THEME_NAME} @ {size}px")
 
 
 def _ov(val: str | None, pal: dict[str, str]) -> str | None:
@@ -842,8 +895,6 @@ def cmd_apply(args: argparse.Namespace) -> None:
         die("nothing built yet - run: omarchy-cursor-dye sync")
     size = args.size or st.get("size") or load_config()["cursor"]["size"]
     apply_cursor(size, dry=args.dry_run)
-    if not args.dry_run:
-        log(f"applied {THEME_NAME} @ {size}px")
 
 
 def cmd_status(_args: argparse.Namespace) -> None:
