@@ -5,13 +5,17 @@
 # Run `omarchy-cursor-dye sync --force` after changing anything.
 
 [colors]
-# `preset` picks how the theme's colours land on the cursor. Two are built in:
+# `preset` picks how the theme's colours land on the cursor. Four are built in:
 #
-#   "accent-fill"     (default) - accent fills the cursor, neutral outline.
-#                       Loud - the pointer reads as "the theme's colour".
-#   "accent-outline"  - accent moves to the outline; the fill matches your UI
-#                       text colour (same one your bar / terminal foreground
-#                       uses). Subtler, the accent shows as a thin edge.
+#   "accent-fill"         (default) - accent fills the cursor, a computed
+#                          neutral outline. Loud - reads as "the theme's colour".
+#   "accent-outline"      - accent moves to the outline; the fill matches your
+#                          UI text colour. Subtler, the accent is a thin edge.
+#   "accent-fill-bar"     - like accent-fill, but the outline is the top bar's
+#                          *actual* background (shell.toml's [bar].background)
+#                          instead of a computed black/white-ish pole.
+#   "accent-outline-bar"  - like accent-outline, but the fill is that same
+#                          real bar colour instead of the generic foreground.
 preset = "accent-fill"
 
 # Any of the three slots below overrides that slot of the chosen preset - set
@@ -29,6 +33,8 @@ preset = "accent-fill"
 #   color0 .. color15   (color0 = darkest, usually the bg; color1..6 = the hues)
 #   red green yellow blue magenta cyan  +  bright_red, bright_blue, ...
 #   muted  orange  purple  brown
+#   bar  bar_text  bar_active   (the top bar's own colours, from shell.toml -
+#     falls back to background/foreground when a theme doesn't define its own)
 # Run `omarchy-theme-color --file ~/.local/state/omarchy/current/theme/colors.toml --all`
 # to see every key resolved for your current theme.
 

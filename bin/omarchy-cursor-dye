@@ -79,11 +79,21 @@ def spec_candidates(style: str) -> list[Path]:
 
 # A preset just seeds the three colour slots; any explicit base/outline/watch in
 # [colors] overrides its slot, and --base/--outline/--watch beat everything.
+#
+# "bar" is the top bar's own background (shell.toml's [bar].background) - a
+# colour the theme author actually picked, as opposed to "auto"'s computed
+# light/dark pole. Falls back to background/foreground when a theme doesn't
+# expose it (see palette()).
 PRESETS = {
-    # theme accent fills the cursor, neutral border  (the loud one)
+    # theme accent fills the cursor, computed neutral outline  (the loud one)
     "accent-fill": {"base": "accent", "outline": "auto", "watch": "background"},
-    # accent becomes the border, the fill matches your UI text / bar colour
+    # accent becomes the border, the fill matches your UI text colour
     "accent-outline": {"base": "foreground", "outline": "accent", "watch": "background"},
+    # like accent-fill, but the outline/watch are the bar's real background
+    # instead of a computed black/white-ish pole
+    "accent-fill-bar": {"base": "accent", "outline": "bar", "watch": "bar"},
+    # like accent-outline, but the fill is the bar's real background
+    "accent-outline-bar": {"base": "bar", "outline": "accent", "watch": "bar"},
 }
 
 DEFAULT_CONFIG = {
@@ -96,7 +106,10 @@ PALETTE_KEYS = (
     "accent, foreground, background, cursor, selection_background,\n"
     "  color0..color15  (color0 is usually the background, color1..6 the hues),\n"
     "  red, green, yellow, blue, magenta, cyan  (+ bright_red, bright_blue, ...),\n"
-    "  muted, orange, purple, brown"
+    "  muted, orange, purple, brown,\n"
+    "  bar, bar_text, bar_active  (the top bar's own colours, from shell.toml -\n"
+    "  a theme-authored colour rather than one computed from colors.toml; falls\n"
+    "  back to background/foreground when a theme doesn't define its own bar)"
 )
 
 CONFIG_HELP = f"""\
@@ -104,10 +117,13 @@ config.toml lives at {CONFIG_FILE}
 (created from config.example.toml the first time you run this command).
 
 [colors]
-  preset    {' | '.join(PRESETS)}   (default: accent-fill)
-            seeds base/outline/watch below - accent-fill puts the theme accent
-            on the fill with a neutral outline; accent-outline puts it on the
-            outline instead, with the fill matching your foreground colour.
+  preset    {' | '.join(PRESETS)}
+            (default: accent-fill)
+            seeds base/outline/watch below:
+              accent-fill          accent fills, computed neutral outline
+              accent-outline       accent outlines, fill = foreground
+              accent-fill-bar      accent fills, outline = the bar's real colour
+              accent-outline-bar   accent outlines, fill = the bar's real colour
 
   base      overrides the preset's fill.
   outline   overrides the preset's outline. "auto" = dark outline on a light
@@ -270,6 +286,25 @@ def palette(theme: str | None) -> dict[str, str]:
         )
 
     out.setdefault("mode", "dark" if luminance(out.get("background", "#000")) < 0.5 else "light")
+
+    # The bar's own [bar] section in shell.toml is theme-authored and can
+    # diverge from colors.toml's background/foreground (Omarchy's default
+    # template just mirrors them, but a theme - like a hand-tuned one in
+    # ~/.config/omarchy/themes - may override bar text/background directly).
+    # Only resolvable for the currently-staged theme or a theme that ships its
+    # own shell.toml; otherwise these keys are simply absent and callers fall
+    # back to background/foreground, which is what the default template uses.
+    if colors_file:
+        shell_file = colors_file.parent / "shell.toml"
+        if shell_file.is_file():
+            try:
+                bar = tomllib.loads(shell_file.read_text()).get("bar", {})
+                for src, dest in (("background", "bar"), ("text", "bar_text"), ("active", "bar_active")):
+                    if isinstance(bar.get(src), str):
+                        out[dest] = bar[src]
+            except (tomllib.TOMLDecodeError, OSError):
+                pass
+
     return out
 
 
@@ -299,7 +334,7 @@ def compute_colors(cfg: dict, pal: dict[str, str], overrides: dict[str, str | No
 
     base = (
         overrides.get("base")
-        or resolve_color(slots["base"], pal, fallbacks=("accent", "cursor", "color4", "color1", "foreground"))
+        or resolve_color(slots["base"], pal, fallbacks=("accent", "cursor", "color4", "color1", "foreground", "background"))
         or "#e0e0e0"
     )
 
@@ -309,7 +344,7 @@ def compute_colors(cfg: dict, pal: dict[str, str], overrides: dict[str, str | No
         or ("#e8e8e8" if light else "#101010")
     )
 
-    outline = overrides.get("outline") or resolve_color(slots["outline"], pal)
+    outline = overrides.get("outline") or resolve_color(slots["outline"], pal, fallbacks=("background",))
     if outline is None:
         # auto: Bibata convention - light cursors get a dark outline, dark ones a
         # light outline. Follow the theme's mode, then flip if the base colour is

@@ -117,20 +117,26 @@ by a **preset**, then overridable per slot:
 
 | `preset` | base | outline | look |
 |---|---|---|---|
-| `accent-fill` *(default)* | accent | auto (dark on light theme, light on dark) | loud - the pointer reads as "the theme's colour" |
-| `accent-outline` | foreground (your bar/terminal text colour) | accent | subtler - accent shows as a thin edge |
+| `accent-fill` *(default)* | accent | auto (computed: dark on a light theme, light on dark) | loud - the pointer reads as "the theme's colour" |
+| `accent-outline` | foreground | accent | subtler - accent shows as a thin edge |
+| `accent-fill-bar` | accent | **bar** (the top bar's real background) | like accent-fill, outline matches your actual bar instead of a computed pole |
+| `accent-outline-bar` | **bar** | accent | like accent-outline, fill matches your actual bar instead of the generic foreground |
+
+`bar` is not a heuristic — it's `shell.toml`'s `[bar].background` for the active
+theme, i.e. whatever colour your top bar is actually rendered in (falls back to
+`background`/`foreground` for a theme that doesn't override its own bar).
 
 ```toml
 [colors]
-preset = "accent-outline"
+preset = "accent-fill-bar"
 ```
 
-![accent-fill vs accent-outline](docs/presets.png)
+![all four presets](docs/presets.png)
 
 Override just one slot without leaving the preset - each value is a **palette
 key** from the active theme (`accent`, `foreground`, `background`, `cursor`,
-`color0`–`color15`, `red`, `blue`, `selection_background`, …), a **hex literal**
-(`"#ff5fd7"`), or (outline only) `"auto"`:
+`color0`–`color15`, `red`, `blue`, `selection_background`, `bar`, `bar_text`,
+`bar_active`, …), a **hex literal** (`"#ff5fd7"`), or (outline only) `"auto"`:
 
 ```toml
 [colors]
