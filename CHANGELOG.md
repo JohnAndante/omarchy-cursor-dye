@@ -1,5 +1,36 @@
 # Changelog
 
+## v1.1.3
+
+Fixes from a code-quality review (issue #3), all with CI regression coverage:
+
+- `sync --dry-run` died with "cache miss" on any not-yet-cached colour set -
+  exactly the case it exists for.
+- Bad hex on `--base`/`--outline`/`--watch`, a malformed `config.toml`, and a
+  malformed hex in the theme's own `colors.toml` each raised a raw traceback
+  instead of a clean error.
+- `install.sh` never installed `cursors-right.toml` - the left-handed styles
+  only worked by accident, via the fallback to the git checkout.
+- An interrupted build (Ctrl-C, a backgrounded hook losing its session, OOM)
+  left a half-built cache entry that read as a permanent, valid hit. Two
+  theme switches in a row raced over the same install paths. Both fixed:
+  atomic build-then-promote, and a lock held across build+install.
+- Refreshing the Bibata artwork (`--refresh-svg`) didn't invalidate the
+  cache, so the old cursors kept being served; a shape with no matching
+  placeholder colour built and installed undyed with exit 0. The cache key
+  now includes an artwork fingerprint, and a zero-substitution shape is a
+  hard error.
+- A typo'd `config.toml` section or key was silently ignored - the edit did
+  nothing, with no indication why. `xcursor.sizes`/`anim_sizes` are now
+  validated too (a non-list value used to crash with a raw `TypeError`).
+- `apply_cursor()` discarded every `hyprctl`/`gsettings` return code, so a
+  dead Hyprland session (SSH, a hook firing before login finishes) still
+  logged "applied" and exited 0. Failures are now reported.
+- The `theme-set` hook redirected its log before creating the log's
+  directory (latent - `install.sh` always runs a sync first, but not
+  guaranteed); a doc/comment path (`~/.icons/...`) didn't match what the
+  code actually writes (`~/.local/share/icons/...`).
+
 ## v1.1.2
 
 Bugfix, found during a documentation/CLI audit:
