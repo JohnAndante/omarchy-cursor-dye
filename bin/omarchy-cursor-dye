@@ -92,6 +92,57 @@ DEFAULT_CONFIG = {
     "xcursor": {"sizes": [24, 32, 48, 64], "anim_sizes": [24, 32]},
 }
 
+PALETTE_KEYS = (
+    "accent, foreground, background, cursor, selection_background,\n"
+    "  color0..color15  (color0 is usually the background, color1..6 the hues),\n"
+    "  red, green, yellow, blue, magenta, cyan  (+ bright_red, bright_blue, ...),\n"
+    "  muted, orange, purple, brown"
+)
+
+CONFIG_HELP = f"""\
+config.toml lives at {CONFIG_FILE}
+(created from config.example.toml the first time you run this command).
+
+[colors]
+  preset    {' | '.join(PRESETS)}   (default: accent-fill)
+            seeds base/outline/watch below - accent-fill puts the theme accent
+            on the fill with a neutral outline; accent-outline puts it on the
+            outline instead, with the fill matching your foreground colour.
+
+  base      overrides the preset's fill.
+  outline   overrides the preset's outline. "auto" = dark outline on a light
+            theme, light outline on a dark one, flipped if that clashes with base.
+  watch     overrides the preset's disc behind the loading/"busy" spinner.
+
+  Each of base/outline/watch takes a palette key from the active Omarchy theme,
+  or a literal hex colour ("#ff5fd7"). Palette keys:
+  {PALETTE_KEYS}
+  (see them resolved for your theme:
+   omarchy-theme-color --file ~/.local/state/omarchy/current/theme/colors.toml --all)
+
+[cursor]
+  size      pointer size in px (default: 24). Applied live; run ./install.sh
+            again after changing it so it also sticks across logins.
+  style     {' | '.join(STYLES)}   (default: modern)
+            modern/original = rounded/sharp edges. The "-right" pair is the
+            mirrored, left-handed pointer.
+
+[xcursor]
+  sizes       px sizes baked into the XCursor bitmaps (XWayland/Electron/games;
+              hyprcursor itself is vector and needs none of this).
+              default: [24, 32, 48, 64]
+  anim_sizes  same, but only for the two animated shapes (54 frames each) to
+              keep builds quick. default: [24, 32]
+
+After editing, run:  omarchy-cursor-dye sync
+(nothing watches the file - the theme-set hook only fires on an actual
+`omarchy theme set`, so a config-only change needs sync run by hand)
+
+One-off overrides without touching the file:
+  omarchy-cursor-dye sync --base '#ff5fd7' --outline '#101010'
+  omarchy-cursor-dye sync --base foreground
+"""
+
 QUIET = False
 
 
@@ -748,7 +799,12 @@ def main(argv: list[str] | None = None) -> int:
     sp = sub.add_parser("env", parents=[common])
     sp.add_argument("--format", choices=("lua", "conf"), default="lua")
 
-    sp = sub.add_parser("config", parents=[common])
+    sp = sub.add_parser(
+        "config", parents=[common],
+        description="Open (or locate) config.toml.",
+        epilog=CONFIG_HELP,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     sp.add_argument("--path", action="store_true", help="print the path only, don't open an editor")
 
     args = p.parse_args(argv)
