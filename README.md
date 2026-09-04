@@ -10,6 +10,8 @@ Omarchy retints your terminal, editor, browser, bar and GTK apps on every `omarc
 
 ![Dyed cursors across a handful of Omarchy themes](docs/preview.png)
 
+*(`accent-fill`, default settings, on the stock Omarchy themes named above each row - no third-party theme required)*
+
 - **Vector all the way.** hyprcursor cursors stay SVG — no rasterisation, crisp at any size. XCursor bitmaps are rendered for XWayland / Electron / games.
 - **Fast.** A colour set builds in well under a second and is cached, so repeat themes apply instantly.
 - **Light-touch.** Everything lives under `~/.local` / `~/.config`. One managed block in your Hyprland config, one file in the Omarchy hook dir. Clean uninstall.
@@ -114,6 +116,8 @@ preset = "accent-fill-bar"
 ```
 
 ![all six presets](docs/presets.png)
+
+*(shown on [Harbor Dark](https://github.com/HANCORE-linux/omarchy-harbordark-theme) by [HANCORE-linux](https://github.com/HANCORE-linux), a third-party Omarchy theme - accent `#e75a50`, foreground `#efebdc`, bar `#1b1b1b`)*
 
 Override just one slot without leaving the preset - each value is a **palette key** from the active theme (`accent`, `foreground`, `background`, `cursor`, `color0`–`color15`, `red`, `blue`, `selection_background`, `bar`, `bar_text`, `bar_active`, …), a **hex literal** (`"#ff5fd7"`), or (outline only) `"auto"`:
 
