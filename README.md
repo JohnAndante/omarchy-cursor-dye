@@ -109,18 +109,42 @@ same shapes — irrelevant here, since the colours are what this tool sets.
 
 ### How the colours are chosen
 
-Three slots — `base` (fill), `outline` (border), `watch` (spinner disc). Each
-takes a **palette key** from the active theme (`accent`, `foreground`,
-`background`, `cursor`, `color0`–`color15`, `red`, `blue`, `selection_background`,
-…), a **hex literal** (`"#ff5fd7"`), or `"auto"`. Defaults: fill = the theme's
-`accent`, outline = auto (dark-on-light / light-on-dark), watch = `background`.
+Three slots — `base` (fill), `outline` (border), `watch` (spinner disc) — seeded
+by a **preset**, then overridable per slot:
 
-Try one without editing the file:
+| `preset` | base | outline | look |
+|---|---|---|---|
+| `accent-fill` *(default)* | accent | auto (dark on light theme, light on dark) | loud - the pointer reads as "the theme's colour" |
+| `accent-outline` | foreground (your bar/terminal text colour) | accent | subtler - accent shows as a thin edge |
+
+```toml
+[colors]
+preset = "accent-outline"
+```
+
+![accent-fill vs accent-outline](docs/presets.png)
+
+Override just one slot without leaving the preset - each value is a **palette
+key** from the active theme (`accent`, `foreground`, `background`, `cursor`,
+`color0`–`color15`, `red`, `blue`, `selection_background`, …), a **hex literal**
+(`"#ff5fd7"`), or (outline only) `"auto"`:
+
+```toml
+[colors]
+preset = "accent-fill"
+watch = "color2"        # only the spinner disc changes
+```
+
+Or try one without editing the file:
 
 ```bash
 omarchy-cursor-dye sync --base '#ff5fd7' --outline '#101010'
 omarchy-cursor-dye sync --base foreground        # palette key works too
 ```
+
+After any `config.toml` edit, run `omarchy-cursor-dye sync` to pick it up -
+nothing watches the file, and the `theme-set` hook only fires on an actual
+`omarchy theme set`.
 
 ### Size
 

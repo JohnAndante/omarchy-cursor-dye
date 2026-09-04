@@ -5,15 +5,24 @@
 # Run `omarchy-cursor-dye sync --force` after changing anything.
 
 [colors]
-# The cursor has three colour slots. Each value is one of:
-#   - a palette key from the active Omarchy theme (see the list below)
-#   - a literal hex string, e.g. "#ff8800"
-#   - "auto"  (outline only)
+# `preset` picks how the theme's colours land on the cursor. Two are built in:
 #
-# base    - the cursor fill. The colour people actually notice.
-# outline - the border. "auto" = dark outline on light themes, light on dark
-#           (the Bibata convention), flipped if that pole clashes with the base.
-# watch   - the disc behind the loading / "app is busy" spinner.
+#   "accent-fill"     (default) - accent fills the cursor, neutral outline.
+#                       Loud - the pointer reads as "the theme's colour".
+#   "accent-outline"  - accent moves to the outline; the fill matches your UI
+#                       text colour (same one your bar / terminal foreground
+#                       uses). Subtler, the accent shows as a thin edge.
+preset = "accent-fill"
+
+# Any of the three slots below overrides that slot of the chosen preset - set
+# just the one you want to change, leave the others to the preset. Each value
+# is a palette key from the active Omarchy theme, a literal hex ("#ff8800"),
+# or (outline only) "auto" = dark outline on light themes, light on dark,
+# flipped if that pole clashes with the fill.
+#
+# base    = "accent"
+# outline = "auto"
+# watch   = "background"
 #
 # Palette keys you can use:
 #   accent  foreground  background  cursor  selection_background
@@ -22,9 +31,6 @@
 #   muted  orange  purple  brown
 # Run `omarchy-theme-color --file ~/.local/state/omarchy/current/theme/colors.toml --all`
 # to see every key resolved for your current theme.
-base = "accent"
-outline = "auto"
-watch = "background"
 
 [cursor]
 # Applied cursor size in px. 24 is the Omarchy default. This is written into the

@@ -74,8 +74,17 @@ def spec_candidates(style: str) -> list[Path]:
     fname = STYLES.get(style, "cursors.toml")
     return [DATA_DIR / fname, REPO_ROOT / "share" / fname]
 
+# A preset just seeds the three colour slots; any explicit base/outline/watch in
+# [colors] overrides its slot, and --base/--outline/--watch beat everything.
+PRESETS = {
+    # theme accent fills the cursor, neutral border  (the loud one)
+    "accent-fill": {"base": "accent", "outline": "auto", "watch": "background"},
+    # accent becomes the border, the fill matches your UI text / bar colour
+    "accent-outline": {"base": "foreground", "outline": "accent", "watch": "background"},
+}
+
 DEFAULT_CONFIG = {
-    "colors": {"base": "accent", "outline": "auto", "watch": "background"},
+    "colors": {"preset": "accent-fill"},
     "cursor": {"size": 24, "style": "modern"},
     "xcursor": {"sizes": [24, 32, 48, 64], "anim_sizes": [24, 32]},
 }
@@ -229,19 +238,24 @@ def compute_colors(cfg: dict, pal: dict[str, str], overrides: dict[str, str | No
     cc = cfg["colors"]
     light = pal.get("mode") == "light"
 
+    preset = PRESETS.get(cc.get("preset", "accent-fill"))
+    if preset is None:
+        die(f"unknown colour preset {cc.get('preset')!r} - pick one of: {', '.join(PRESETS)}")
+    slots = {s: cc[s] if s in cc else preset[s] for s in ("base", "outline", "watch")}
+
     base = (
         overrides.get("base")
-        or resolve_color(cc["base"], pal, fallbacks=("accent", "cursor", "color4", "color1", "foreground"))
+        or resolve_color(slots["base"], pal, fallbacks=("accent", "cursor", "color4", "color1", "foreground"))
         or "#e0e0e0"
     )
 
     watch = (
         overrides.get("watch")
-        or resolve_color(cc["watch"], pal, fallbacks=("background", "color0"))
+        or resolve_color(slots["watch"], pal, fallbacks=("background", "color0"))
         or ("#e8e8e8" if light else "#101010")
     )
 
-    outline = overrides.get("outline") or resolve_color(cc["outline"], pal)
+    outline = overrides.get("outline") or resolve_color(slots["outline"], pal)
     if outline is None:
         # auto: Bibata convention - light cursors get a dark outline, dark ones a
         # light outline. Follow the theme's mode, then flip if the base colour is
