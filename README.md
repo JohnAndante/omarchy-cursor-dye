@@ -46,10 +46,16 @@ cd ~/Projects/omarchy-cursor-dye
 
 The installer fetches the Bibata SVGs (pinned release, ~2 MB, not redistributed here), links the `omarchy-cursor-dye` command into `~/.local/bin`, drops the `theme-set` hook, adds a small managed block to `~/.config/hypr/looknfeel.lua` that pins the `omarchy-dye` pointer, and builds the cursor for your current theme.
 
-It also adds an **Appearance → Cursor Dye** submenu to the Omarchy menu. It
-provides visual controls for presets, size, cursor style, sync, and configuration.
-An existing `~/.config/omarchy/extensions/omarchy-menu.jsonc` is merged without
-being overwritten.
+The menu integration is opt-in so installation never changes an existing user
+menu file. To add the **Appearance → Cursor Dye** submenu, run:
+
+```bash
+~/.config/omarchy/plugins/io.github.johnandante.cursor-dye/tools/install-menu-entries.sh
+```
+
+It provides visual controls for presets, size, cursor style, sync, and
+configuration. An existing `omarchy-menu.jsonc` is merged without being
+overwritten.
 
 Re-run `./install.sh` any time to update; `./install.sh --refresh-svg` also re-pulls the Bibata artwork.
 
