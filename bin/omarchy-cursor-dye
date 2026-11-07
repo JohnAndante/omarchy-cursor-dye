@@ -929,6 +929,10 @@ def _ov(val: str | None, pal: dict[str, str]) -> str | None:
 
 
 def cmd_apply(args: argparse.Namespace) -> None:
+    cfg = load_config()
+    if cfg["behavior"].get("mode") == "default":
+        reset_cursor(cfg["cursor"]["size"], dry=args.dry_run)
+        return
     st = read_state()
     if not DEST.is_dir():
         die("nothing built yet - run: omarchy-cursor-dye sync")
@@ -936,9 +940,18 @@ def cmd_apply(args: argparse.Namespace) -> None:
     apply_cursor(size, dry=args.dry_run)
 
 
-def cmd_status(_args: argparse.Namespace) -> None:
+def cmd_status(args: argparse.Namespace) -> None:
     st = read_state()
     cfg = load_config()
+    if args.json:
+        print(json.dumps({
+            "mode": cfg["behavior"]["mode"],
+            "fixed_color": cfg["behavior"]["fixed_color"],
+            "preset": cfg["colors"]["preset"],
+            "size": cfg["cursor"]["size"],
+            "style": cfg["cursor"]["style"],
+        }))
+        return
     print(f"mode          : {cfg['behavior']['mode']}")
     if cfg["behavior"]["mode"] == "fixed":
         print(f"fixed colour  : {cfg['behavior']['fixed_color']}")
@@ -1098,7 +1111,8 @@ def main(argv: list[str] | None = None) -> int:
     sp = sub.add_parser("apply", parents=[common])
     sp.add_argument("--size", type=int)
 
-    sub.add_parser("status", parents=[common])
+    sp = sub.add_parser("status", parents=[common])
+    sp.add_argument("--json", action="store_true")
     sub.add_parser("clear-cache", parents=[common])
 
     sp = sub.add_parser("set", parents=[common], help="change a setting and sync")

@@ -67,7 +67,7 @@ omarchy-cursor-dye build [THEME]    build into the cache only, don't touch the s
 omarchy-cursor-dye apply            re-apply the last build (e.g. right after login)
 omarchy-cursor-dye status           show resolved colours and cache state
   omarchy-cursor-dye clear-cache      drop every cached build
-  omarchy-cursor-dye set KEY VALUE    change preset, size, or style and sync
+  omarchy-cursor-dye set KEY VALUE    change mode, preset, size, style, or fixed colour
 omarchy-cursor-dye config           print config.toml's path and open it in your editor (--path: print only)
 omarchy-cursor-dye env              print the Hyprland env snippet (--format lua|conf)
 
@@ -85,6 +85,20 @@ omarchy-cursor-dye status
 ```
 
 Already-running apps may keep the old pointer until they restart. Hyprland itself, and anything launched afterwards, update immediately.
+
+### Cursor modes
+
+The default `follow` mode rebuilds the cursor from the active Omarchy theme.
+Use `fixed-color` to lock the fill to a hex colour, or `mode default` to restore
+the system cursor:
+
+```bash
+omarchy-cursor-dye set mode follow
+omarchy-cursor-dye set fixed-color '#39ff14'
+omarchy-cursor-dye set mode default
+```
+
+The menu integration exposes these modes through Omarchy's native text input.
 
 ## Configuration
 
