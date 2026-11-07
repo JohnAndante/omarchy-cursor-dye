@@ -27,6 +27,17 @@ sudo pacman -S --needed hyprcursor librsvg xorg-xcursorgen xcur2png python git
 
 ## Install
 
+### From the Omarchy plugin marketplace
+
+When installed as a marketplace plugin, Omarchy starts the plugin service and
+runs `install.sh` automatically. The installer is safe to re-run and keeps the
+same setup and removal behavior described below.
+
+The service runs with the current user's permissions. It may install the
+documented package dependencies, fetch the pinned Bibata cursor source, write
+the theme hook, and add the managed Hyprland block. Review `install.sh` before
+enabling the plugin.
+
 ```bash
 git clone https://github.com/JohnAndante/omarchy-cursor-dye.git ~/Projects/omarchy-cursor-dye
 cd ~/Projects/omarchy-cursor-dye
