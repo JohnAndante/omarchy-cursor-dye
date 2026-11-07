@@ -8,7 +8,7 @@ Tint your mouse pointer to match the current [Omarchy](https://omarchy.org) them
 
 Omarchy retints your terminal, editor, browser, bar and GTK apps on every `omarchy theme set` — but not the mouse cursor. This fills that gap: it reads the palette Omarchy already generated, dyes the [Bibata](https://github.com/ful1e5/Bibata_Cursor) cursor SVGs to match, and compiles one cursor theme (`omarchy-dye`) in **both** hyprcursor and XCursor formats. Wire it to Omarchy's `theme-set` hook and the pointer re-dyes itself whenever you switch themes.
 
-![Dyed cursors across a handful of Omarchy themes](docs/preview.png)
+![Dyed cursors across a handful of Omarchy themes](preview.png)
 
 *(`accent-fill`, default settings, on the stock Omarchy themes named above each row - no third-party theme required)*
 
@@ -46,10 +46,10 @@ cd ~/Projects/omarchy-cursor-dye
 
 The installer fetches the Bibata SVGs (pinned release, ~2 MB, not redistributed here), links the `omarchy-cursor-dye` command into `~/.local/bin`, drops the `theme-set` hook, adds a small managed block to `~/.config/hypr/looknfeel.lua` that pins the `omarchy-dye` pointer, and builds the cursor for your current theme.
 
-It also adds a small **Appearance → Cursor Dye** submenu to the Omarchy menu
-when no user menu extension exists yet. It provides sync, re-apply, config,
-status, and cache actions. An existing `~/.config/omarchy/extensions/omarchy-menu.jsonc`
-is never overwritten; copy `share/omarchy-menu.jsonc` into it manually if needed.
+It also adds an **Appearance → Cursor Dye** submenu to the Omarchy menu. It
+provides visual controls for presets, size, cursor style, sync, and configuration.
+An existing `~/.config/omarchy/extensions/omarchy-menu.jsonc` is merged without
+being overwritten.
 
 Re-run `./install.sh` any time to update; `./install.sh --refresh-svg` also re-pulls the Bibata artwork.
 
@@ -60,7 +60,8 @@ omarchy-cursor-dye sync [THEME]     build (if needed) and apply — THEME defaul
 omarchy-cursor-dye build [THEME]    build into the cache only, don't touch the session
 omarchy-cursor-dye apply            re-apply the last build (e.g. right after login)
 omarchy-cursor-dye status           show resolved colours and cache state
-omarchy-cursor-dye clear-cache      drop every cached build
+  omarchy-cursor-dye clear-cache      drop every cached build
+  omarchy-cursor-dye set KEY VALUE    change preset, size, or style and sync
 omarchy-cursor-dye config           print config.toml's path and open it in your editor (--path: print only)
 omarchy-cursor-dye env              print the Hyprland env snippet (--format lua|conf)
 
@@ -96,7 +97,8 @@ sizes      = [24, 32, 48, 64]
 anim_sizes = [24, 32]
 ```
 
-Run `omarchy-cursor-dye sync --force` after any change. After changing **`size`**, re-run `./install.sh` too — the size is baked into the Hyprland env block so it sticks across logins.
+Run `omarchy-cursor-dye sync --force` after manual changes. The menu's preset,
+size, and style controls save and apply their changes immediately.
 
 ### Which cursor
 

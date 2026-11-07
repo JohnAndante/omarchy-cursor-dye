@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.2.0
+
+- Added an Omarchy menu integration under **Appearance → Cursor Dye**.
+- Added visual controls for all six presets, cursor size, handedness/style,
+  synchronization, and configuration.
+- Added `omarchy-cursor-dye set preset|size|style` for scripted configuration
+  changes with immediate synchronization.
+- Existing Omarchy menu extensions are merged without being overwritten.
+- Added a root `preview.png` so the plugin marketplace can use the project
+  preview instead of its fallback image.
+
 ## v1.1.3
 
 Fixes from a code-quality review (issue #3), all with CI regression coverage:
