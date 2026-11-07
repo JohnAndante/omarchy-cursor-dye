@@ -1,0 +1,9 @@
+{
+  // Installed by omarchy-cursor-dye. Remove this file to remove the menu.
+  "appearance.cursor-dye": {"icon":"󰌽","label":"Cursor Dye"},
+  "appearance.cursor-dye.sync": {"icon":"󰑐","label":"Sync Cursor","action":"omarchy-cursor-dye sync"},
+  "appearance.cursor-dye.apply": {"icon":"󰏪","label":"Re-apply Cursor","action":"omarchy-cursor-dye apply"},
+  "appearance.cursor-dye.config": {"icon":"","label":"Open Configuration","action":"omarchy-cursor-dye config"},
+  "appearance.cursor-dye.status": {"icon":"󰙎","label":"Show Status","action":"omarchy-launch-floating-terminal-with-presentation omarchy-cursor-dye status"},
+  "appearance.cursor-dye.clear-cache": {"icon":"󰆴","label":"Clear Build Cache","action":"omarchy-cursor-dye clear-cache"}
+}

@@ -10,6 +10,8 @@ DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/omarchy-cursor-dye"
 BIN_DIR="$HOME/.local/bin"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy-cursor-dye"
 HOOK_DIR="$HOME/.config/omarchy/hooks/theme-set.d"
+MENU_DIR="$HOME/.config/omarchy/extensions"
+MENU_FILE="$MENU_DIR/omarchy-menu.jsonc"
 HYPR_DIR="$HOME/.config/hypr"
 
 say()  { printf '\033[36m::\033[0m %s\n' "$*"; }
@@ -63,6 +65,16 @@ esac
 mkdir -p "$HOOK_DIR"
 install -Dm755 "$REPO_DIR/hooks/theme-set.d/50-omarchy-cursor-dye" "$HOOK_DIR/50-omarchy-cursor-dye"
 say "installed theme-set hook"
+
+# Add the menu integration only when the user has no extension file yet.
+# Never overwrite an existing menu extension.
+if [[ ! -e $MENU_FILE ]]; then
+  mkdir -p "$MENU_DIR"
+  install -Dm644 "$REPO_DIR/share/omarchy-menu.jsonc" "$MENU_FILE"
+  say "installed Appearance > Cursor Dye menu"
+elif ! grep -q 'omarchy-cursor-dye' "$MENU_FILE"; then
+  warn "existing $MENU_FILE found - add share/omarchy-menu.jsonc manually for menu integration"
+fi
 
 # --- config ----------------------------------------------------------------
 if [[ ! -f $CONFIG_DIR/config.toml ]]; then

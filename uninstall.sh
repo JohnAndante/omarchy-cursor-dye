@@ -2,12 +2,14 @@
 # Remove omarchy-cursor-dye and restore the default pointer.
 set -euo pipefail
 
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/omarchy-cursor-dye"
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/omarchy-cursor-dye"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-cursor-dye"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy-cursor-dye"
 BIN="$HOME/.local/bin/omarchy-cursor-dye"
 HOOK="$HOME/.config/omarchy/hooks/theme-set.d/50-omarchy-cursor-dye"
+MENU_FILE="$HOME/.config/omarchy/extensions/omarchy-menu.jsonc"
 ICONS="${XDG_DATA_HOME:-$HOME/.local/share}/icons/omarchy-dye"
 HYPR_DIR="$HOME/.config/hypr"
 
@@ -17,6 +19,9 @@ KEEP_CONFIG=0
 [[ ${1:-} == "--keep-config" ]] && KEEP_CONFIG=1
 
 rm -f  "$BIN" "$HOOK"
+if [[ -f $MENU_FILE ]] && cmp -s "$REPO_DIR/share/omarchy-menu.jsonc" "$MENU_FILE"; then
+  rm -f "$MENU_FILE"
+fi
 rm -rf "$ICONS" "$CACHE_DIR" "$STATE_DIR" "$DATA_DIR"
 say "removed command, hook, built theme, cache and data"
 
