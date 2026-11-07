@@ -1,6 +1,6 @@
 {
   // Installed by omarchy-cursor-dye. Remove this file to remove the menu.
-  "appearance.cursor-dye": {"icon":"󰌽","label":"Cursor Dye"},
+  "appearance.cursor-dye": {"icon":"󰇀","label":"Cursor Dye"},
   "appearance.cursor-dye.preset": {"icon":"󰏘","label":"Preset"},
   "appearance.cursor-dye.preset.accent-fill": {"icon":"󰏘","label":"Accent Fill","action":"omarchy-cursor-dye set preset accent-fill"},
   "appearance.cursor-dye.preset.accent-outline": {"icon":"󰏘","label":"Accent Outline","action":"omarchy-cursor-dye set preset accent-outline"},
