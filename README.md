@@ -46,10 +46,16 @@ cd ~/Projects/omarchy-cursor-dye
 
 The installer fetches the Bibata SVGs (pinned release, ~2 MB, not redistributed here), links the `omarchy-cursor-dye` command into `~/.local/bin`, drops the `theme-set` hook, adds a small managed block to `~/.config/hypr/looknfeel.lua` that pins the `omarchy-dye` pointer, and builds the cursor for your current theme.
 
-It also adds an **Appearance → Cursor Dye** submenu to the Omarchy menu. It
-provides visual controls for presets, size, cursor style, sync, and configuration.
-An existing `~/.config/omarchy/extensions/omarchy-menu.jsonc` is merged without
-being overwritten.
+The menu integration is opt-in so installation never changes an existing user
+menu file. To add the **Appearance → Cursor Dye** submenu, run:
+
+```bash
+~/.config/omarchy/plugins/io.github.johnandante.cursor-dye/tools/install-menu-entries.sh
+```
+
+It provides visual controls for presets, size, cursor style, sync, and
+configuration. An existing `omarchy-menu.jsonc` is merged without being
+overwritten.
 
 Re-run `./install.sh` any time to update; `./install.sh --refresh-svg` also re-pulls the Bibata artwork.
 
@@ -61,7 +67,7 @@ omarchy-cursor-dye build [THEME]    build into the cache only, don't touch the s
 omarchy-cursor-dye apply            re-apply the last build (e.g. right after login)
 omarchy-cursor-dye status           show resolved colours and cache state
   omarchy-cursor-dye clear-cache      drop every cached build
-  omarchy-cursor-dye set KEY VALUE    change preset, size, or style and sync
+  omarchy-cursor-dye set KEY VALUE    change mode, preset, size, style, or fixed colour
 omarchy-cursor-dye config           print config.toml's path and open it in your editor (--path: print only)
 omarchy-cursor-dye env              print the Hyprland env snippet (--format lua|conf)
 
@@ -79,6 +85,20 @@ omarchy-cursor-dye status
 ```
 
 Already-running apps may keep the old pointer until they restart. Hyprland itself, and anything launched afterwards, update immediately.
+
+### Cursor modes
+
+The default `follow` mode rebuilds the cursor from the active Omarchy theme.
+Use `fixed-color` to lock the fill to a hex colour, or `mode default` to restore
+the system cursor:
+
+```bash
+omarchy-cursor-dye set mode follow
+omarchy-cursor-dye set fixed-color '#39ff14'
+omarchy-cursor-dye set mode default
+```
+
+The menu integration exposes these modes through Omarchy's native text input.
 
 ## Configuration
 

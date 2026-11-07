@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.3.0
+
+- Added `follow`, `fixed`, and `default` cursor modes.
+- Added fixed-colour input through the Omarchy menu.
+- Added checkmarks for the active mode, preset, size, and style.
+- Made menu integration opt-in with a dedicated installer script.
+- Added JSON status output for menu state checks.
+
 ## v1.2.0
 
 - Added an Omarchy menu integration under **Appearance → Cursor Dye**.

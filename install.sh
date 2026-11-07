@@ -10,8 +10,6 @@ DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/omarchy-cursor-dye"
 BIN_DIR="$HOME/.local/bin"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy-cursor-dye"
 HOOK_DIR="$HOME/.config/omarchy/hooks/theme-set.d"
-MENU_DIR="$HOME/.config/omarchy/extensions"
-MENU_FILE="$MENU_DIR/omarchy-menu.jsonc"
 HYPR_DIR="$HOME/.config/hypr"
 
 say()  { printf '\033[36m::\033[0m %s\n' "$*"; }
@@ -65,31 +63,6 @@ esac
 mkdir -p "$HOOK_DIR"
 install -Dm755 "$REPO_DIR/hooks/theme-set.d/50-omarchy-cursor-dye" "$HOOK_DIR/50-omarchy-cursor-dye"
 say "installed theme-set hook"
-
-append_menu_entries() {
-  local last line
-  [[ $(tail -n 1 "$MENU_FILE") == "}" ]] || return 1
-  last=$(grep -nE '^[[:space:]]*"[^"]+"[[:space:]]*:' "$MENU_FILE" | tail -n 1 | cut -d: -f1 || true)
-  if [[ -n $last ]]; then
-    line=$(sed -n "${last}p" "$MENU_FILE")
-    [[ $line == *, ]] || sed -i "${last}s/$/,/" "$MENU_FILE"
-  fi
-  sed -i '$d' "$MENU_FILE"
-  sed '1d;$d' "$REPO_DIR/share/omarchy-menu.jsonc" >>"$MENU_FILE"
-  printf '}\n' >>"$MENU_FILE"
-}
-
-if [[ ! -e $MENU_FILE ]]; then
-  mkdir -p "$MENU_DIR"
-  install -Dm644 "$REPO_DIR/share/omarchy-menu.jsonc" "$MENU_FILE"
-  say "installed Appearance > Cursor Dye menu"
-elif ! grep -q 'omarchy-cursor-dye' "$MENU_FILE"; then
-  if append_menu_entries; then
-    say "added Cursor Dye actions to the existing Omarchy menu"
-  else
-    warn "could not update $MENU_FILE - add share/omarchy-menu.jsonc manually for menu integration"
-  fi
-fi
 
 # --- config ----------------------------------------------------------------
 if [[ ! -f $CONFIG_DIR/config.toml ]]; then

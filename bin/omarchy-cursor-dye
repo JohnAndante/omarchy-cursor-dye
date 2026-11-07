@@ -95,6 +95,7 @@ PRESETS = {
 }
 
 DEFAULT_CONFIG = {
+    "behavior": {"mode": "follow", "fixed_color": "#ffffff"},
     "colors": {"preset": "accent-fill"},
     "cursor": {"size": 24, "style": "modern"},
     "xcursor": {"sizes": [24, 32, 48, 64], "anim_sizes": [24, 32]},
@@ -103,6 +104,7 @@ DEFAULT_CONFIG = {
 # Every key config.toml may set. base/outline/watch have no default (they only
 # override the preset's slot), so DEFAULT_CONFIG can't stand in for this.
 CONFIG_KEYS = {
+    "behavior": ("mode", "fixed_color"),
     "colors": ("preset", "base", "outline", "watch"),
     "cursor": ("size", "style"),
     "xcursor": ("sizes", "anim_sizes"),
@@ -355,6 +357,10 @@ def _auto_pole(light: bool, against: str | None) -> str:
 
 
 def compute_colors(cfg: dict, pal: dict[str, str], overrides: dict[str, str | None]) -> dict[str, str]:
+    behavior = cfg["behavior"]
+    mode = behavior.get("mode", "follow")
+    if mode not in ("follow", "fixed", "default"):
+        die("unknown cursor mode {!r} - pick follow, fixed, or default".format(mode))
     cc = cfg["colors"]
     light = pal.get("mode") == "light"
 
@@ -362,6 +368,13 @@ def compute_colors(cfg: dict, pal: dict[str, str], overrides: dict[str, str | No
     if preset is None:
         die(f"unknown colour preset {cc.get('preset')!r} - pick one of: {', '.join(PRESETS)}")
     slots = {s: cc[s] if s in cc else preset[s] for s in ("base", "outline", "watch")}
+    if mode == "fixed":
+        fixed = behavior.get("fixed_color", "#ffffff")
+        try:
+            parse_hex(fixed)
+        except ValueError as e:
+            die(f"invalid behavior.fixed_color: {e}")
+        slots["base"] = fixed
 
     # Only "accent" gets the accent-flavoured fallback chain. Every other key -
     # "bar" in particular - degrades to a plain neutral, never to accent:
@@ -696,6 +709,26 @@ def apply_cursor(size: int, *, dry: bool = False) -> None:
     if failed:
         warn(f"{THEME_NAME} @ {size}px is installed, but {failed} live-session "
              "command(s) failed - the running session may still show the old cursor")
+
+
+def reset_cursor(size: int = 24, *, dry: bool = False) -> None:
+    steps = [
+        ["hyprctl", "setcursor", "Adwaita", str(size)],
+        ["gsettings", "reset", "org.gnome.desktop.interface", "cursor-theme"],
+        ["gsettings", "reset", "org.gnome.desktop.interface", "cursor-size"],
+        ["hyprctl", "setenv", "HYPRCURSOR_THEME", ""],
+        ["hyprctl", "setenv", "XCURSOR_THEME", ""],
+    ]
+    for cmd in steps:
+        if not have(cmd[0]):
+            continue
+        if dry:
+            log("would run: " + " ".join(cmd))
+        else:
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if not dry:
+        (ICONS_DIR / "default" / "index.theme").unlink(missing_ok=True)
+        log("restored the system cursor")
     else:
         log(f"applied {THEME_NAME} @ {size}px")
 
@@ -851,6 +884,11 @@ def _ensure_cached(h: str, colors: dict[str, str], cfg: dict, *, force: bool, dr
 
 
 def cmd_sync(args: argparse.Namespace, *, apply: bool) -> None:
+    cfg = load_config()
+    if cfg["behavior"].get("mode", "follow") == "default":
+        if apply:
+            reset_cursor(cfg["cursor"]["size"], dry=args.dry_run)
+        return
     cfg, size, theme, colors, h = _resolve(args)
     log(f"theme {theme or '(current)'}  base {colors['base']}  outline {colors['outline']}  watch {colors['watch']}")
 
@@ -891,6 +929,10 @@ def _ov(val: str | None, pal: dict[str, str]) -> str | None:
 
 
 def cmd_apply(args: argparse.Namespace) -> None:
+    cfg = load_config()
+    if cfg["behavior"].get("mode") == "default":
+        reset_cursor(cfg["cursor"]["size"], dry=args.dry_run)
+        return
     st = read_state()
     if not DEST.is_dir():
         die("nothing built yet - run: omarchy-cursor-dye sync")
@@ -898,9 +940,21 @@ def cmd_apply(args: argparse.Namespace) -> None:
     apply_cursor(size, dry=args.dry_run)
 
 
-def cmd_status(_args: argparse.Namespace) -> None:
+def cmd_status(args: argparse.Namespace) -> None:
     st = read_state()
     cfg = load_config()
+    if args.json:
+        print(json.dumps({
+            "mode": cfg["behavior"]["mode"],
+            "fixed_color": cfg["behavior"]["fixed_color"],
+            "preset": cfg["colors"]["preset"],
+            "size": cfg["cursor"]["size"],
+            "style": cfg["cursor"]["style"],
+        }))
+        return
+    print(f"mode          : {cfg['behavior']['mode']}")
+    if cfg["behavior"]["mode"] == "fixed":
+        print(f"fixed colour  : {cfg['behavior']['fixed_color']}")
     theme = omarchy_theme_name()
     print(f"omarchy theme : {theme or 'unknown'}")
     print(f"installed     : {'yes' if DEST.is_dir() else 'no'}  ({DEST})")
@@ -973,7 +1027,18 @@ def set_config_value(section: str, key: str, value: str | int) -> None:
 
 
 def cmd_set(args: argparse.Namespace) -> None:
-    if args.key == "preset":
+    if args.key == "mode":
+        if args.value not in ("follow", "fixed", "default"):
+            die("cursor mode must be follow, fixed, or default")
+        set_config_value("behavior", "mode", args.value)
+    elif args.key == "fixed-color":
+        try:
+            parse_hex(args.value)
+        except ValueError as e:
+            die(str(e))
+        set_config_value("behavior", "fixed_color", args.value)
+        set_config_value("behavior", "mode", "fixed")
+    elif args.key == "preset":
         if args.value not in PRESETS:
             die(f"unknown preset {args.value!r} - pick one of: {', '.join(PRESETS)}")
         set_config_value("colors", "preset", args.value)
@@ -993,7 +1058,7 @@ def cmd_set(args: argparse.Namespace) -> None:
         die(f"unknown setting {args.key!r}")
 
     log(f"set {args.key} = {args.value}")
-    if args.key == "size":
+    if args.key in ("mode", "fixed-color", "size"):
         # The installer also refreshes the Hyprland env block for future logins.
         subprocess.run(["bash", str(REPO_ROOT / "install.sh")], check=True)
         return
@@ -1008,16 +1073,18 @@ def cmd_env(args: argparse.Namespace) -> None:
     """Emit the Hyprland snippet that pins the pointer across logins. The
     installer drops this into ~/.config/hypr; print it yourself to check or to
     wire it up by hand."""
-    size = load_config()["cursor"]["size"]
+    cfg = load_config()
+    size = cfg["cursor"]["size"]
+    theme = "" if cfg["behavior"].get("mode") == "default" else THEME_NAME
     if args.format == "conf":
-        print(f"env = HYPRCURSOR_THEME,{THEME_NAME}")
+        print(f"env = HYPRCURSOR_THEME,{theme}")
         print(f"env = HYPRCURSOR_SIZE,{size}")
-        print(f"env = XCURSOR_THEME,{THEME_NAME}")
+        print(f"env = XCURSOR_THEME,{theme}")
         print(f"env = XCURSOR_SIZE,{size}")
     else:
-        print(f'hl.env("HYPRCURSOR_THEME", "{THEME_NAME}")')
+        print(f'hl.env("HYPRCURSOR_THEME", "{theme}")')
         print(f'hl.env("HYPRCURSOR_SIZE", "{size}")')
-        print(f'hl.env("XCURSOR_THEME", "{THEME_NAME}")')
+        print(f'hl.env("XCURSOR_THEME", "{theme}")')
         print(f'hl.env("XCURSOR_SIZE", "{size}")')
 
 
@@ -1044,11 +1111,12 @@ def main(argv: list[str] | None = None) -> int:
     sp = sub.add_parser("apply", parents=[common])
     sp.add_argument("--size", type=int)
 
-    sub.add_parser("status", parents=[common])
+    sp = sub.add_parser("status", parents=[common])
+    sp.add_argument("--json", action="store_true")
     sub.add_parser("clear-cache", parents=[common])
 
     sp = sub.add_parser("set", parents=[common], help="change a setting and sync")
-    sp.add_argument("key", choices=("preset", "size", "style"))
+    sp.add_argument("key", choices=("mode", "fixed-color", "preset", "size", "style"))
     sp.add_argument("value")
 
     sp = sub.add_parser("env", parents=[common])

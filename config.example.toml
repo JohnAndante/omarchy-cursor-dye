@@ -4,6 +4,12 @@
 # optional; the defaults shown here are what you get with no file at all.
 # Run `omarchy-cursor-dye sync --force` after changing anything.
 
+[behavior]
+# follow tracks the active Omarchy theme; fixed ignores theme changes;
+# default restores the system cursor.
+mode = "follow"
+fixed_color = "#ffffff"
+
 [colors]
 # `preset` picks how the theme's colours land on the cursor. Six are built in:
 #
