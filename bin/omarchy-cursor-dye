@@ -12,6 +12,7 @@ Commands:
   apply           re-apply the last build (useful straight after login).
   status          show the resolved colours and cache state.
   clear-cache     drop every cached build.
+  set KEY VALUE   change preset, cursor size, or cursor style and sync.
   config          print config.toml's path and open it (--path: print only).
   env             print the Hyprland env snippet (--format lua|conf).
 
@@ -952,6 +953,53 @@ def cmd_config(args: argparse.Namespace) -> None:
     subprocess.run([*editor, str(CONFIG_FILE)])
 
 
+def set_config_value(section: str, key: str, value: str | int) -> None:
+    """Update one known config value without discarding the user's comments."""
+    cmd_config(argparse.Namespace(path=True))
+    text = CONFIG_FILE.read_text()
+    section_re = re.compile(rf"(?ms)^(\[{re.escape(section)}\]\s*\n)(.*?)(?=^\[|\Z)")
+    match = section_re.search(text)
+    if not match:
+        text = text.rstrip() + f"\n\n[{section}]\n"
+        match = section_re.search(text)
+    rendered = json.dumps(value) if isinstance(value, str) else str(value)
+    body = match.group(2)
+    key_re = re.compile(rf"(?m)^(\s*{re.escape(key)}\s*=\s*).*$")
+    if key_re.search(body):
+        body = key_re.sub(rf"\g<1>{rendered}", body, count=1)
+    else:
+        body = body.rstrip() + f"\n{key} = {rendered}\n"
+    CONFIG_FILE.write_text(text[:match.start(2)] + body + text[match.end(2):])
+
+
+def cmd_set(args: argparse.Namespace) -> None:
+    if args.key == "preset":
+        if args.value not in PRESETS:
+            die(f"unknown preset {args.value!r} - pick one of: {', '.join(PRESETS)}")
+        set_config_value("colors", "preset", args.value)
+    elif args.key == "size":
+        try:
+            size = int(args.value)
+        except ValueError:
+            die("cursor size must be an integer")
+        if not 1 <= size <= 256:
+            die("cursor size must be between 1 and 256")
+        set_config_value("cursor", "size", size)
+    elif args.key == "style":
+        if args.value not in STYLES:
+            die(f"unknown cursor style {args.value!r} - pick one of: {', '.join(STYLES)}")
+        set_config_value("cursor", "style", args.value)
+    else:
+        die(f"unknown setting {args.key!r}")
+
+    log(f"set {args.key} = {args.value}")
+    sync_args = argparse.Namespace(
+        theme=None, size=None, base=None, outline=None, watch=None,
+        force=False, dry_run=False,
+    )
+    cmd_sync(sync_args, apply=True)
+
+
 def cmd_env(args: argparse.Namespace) -> None:
     """Emit the Hyprland snippet that pins the pointer across logins. The
     installer drops this into ~/.config/hypr; print it yourself to check or to
@@ -995,6 +1043,10 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("status", parents=[common])
     sub.add_parser("clear-cache", parents=[common])
 
+    sp = sub.add_parser("set", parents=[common], help="change a setting and sync")
+    sp.add_argument("key", choices=("preset", "size", "style"))
+    sp.add_argument("value")
+
     sp = sub.add_parser("env", parents=[common])
     sp.add_argument("--format", choices=("lua", "conf"), default="lua")
 
@@ -1022,6 +1074,7 @@ def main(argv: list[str] | None = None) -> int:
         "apply": lambda: cmd_apply(args),
         "status": lambda: cmd_status(args),
         "clear-cache": lambda: cmd_clear_cache(args),
+        "set": lambda: cmd_set(args),
         "env": lambda: cmd_env(args),
         "config": lambda: cmd_config(args),
     }[args.cmd]()

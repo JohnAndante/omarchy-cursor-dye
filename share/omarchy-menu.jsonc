@@ -1,9 +1,23 @@
 {
   // Installed by omarchy-cursor-dye. Remove this file to remove the menu.
   "appearance.cursor-dye": {"icon":"󰌽","label":"Cursor Dye"},
+  "appearance.cursor-dye.preset": {"icon":"󰏘","label":"Preset"},
+  "appearance.cursor-dye.preset.accent-fill": {"icon":"󰏘","label":"Accent Fill","action":"omarchy-cursor-dye set preset accent-fill"},
+  "appearance.cursor-dye.preset.accent-outline": {"icon":"󰏘","label":"Accent Outline","action":"omarchy-cursor-dye set preset accent-outline"},
+  "appearance.cursor-dye.preset.accent-fill-bar": {"icon":"󰏘","label":"Accent Fill + Bar","action":"omarchy-cursor-dye set preset accent-fill-bar"},
+  "appearance.cursor-dye.preset.accent-outline-bar": {"icon":"󰏘","label":"Accent Outline + Bar","action":"omarchy-cursor-dye set preset accent-outline-bar"},
+  "appearance.cursor-dye.preset.bar-fill": {"icon":"󰏘","label":"Bar Fill","action":"omarchy-cursor-dye set preset bar-fill"},
+  "appearance.cursor-dye.preset.bar-outline": {"icon":"󰏘","label":"Bar Outline","action":"omarchy-cursor-dye set preset bar-outline"},
+  "appearance.cursor-dye.size": {"icon":"󰏌","label":"Size"},
+  "appearance.cursor-dye.size.16": {"icon":"󰏌","label":"16 px","action":"omarchy-cursor-dye set size 16"},
+  "appearance.cursor-dye.size.24": {"icon":"󰏌","label":"24 px","action":"omarchy-cursor-dye set size 24"},
+  "appearance.cursor-dye.size.32": {"icon":"󰏌","label":"32 px","action":"omarchy-cursor-dye set size 32"},
+  "appearance.cursor-dye.size.48": {"icon":"󰏌","label":"48 px","action":"omarchy-cursor-dye set size 48"},
+  "appearance.cursor-dye.style": {"icon":"󰖲","label":"Style"},
+  "appearance.cursor-dye.style.modern": {"icon":"󰖲","label":"Modern","action":"omarchy-cursor-dye set style modern"},
+  "appearance.cursor-dye.style.original": {"icon":"󰖲","label":"Original","action":"omarchy-cursor-dye set style original"},
+  "appearance.cursor-dye.style.modern-right": {"icon":"󰖲","label":"Modern Left-handed","action":"omarchy-cursor-dye set style modern-right"},
+  "appearance.cursor-dye.style.original-right": {"icon":"󰖲","label":"Original Left-handed","action":"omarchy-cursor-dye set style original-right"},
   "appearance.cursor-dye.sync": {"icon":"󰑐","label":"Sync Cursor","action":"omarchy-cursor-dye sync"},
-  "appearance.cursor-dye.apply": {"icon":"󰏪","label":"Re-apply Cursor","action":"omarchy-cursor-dye apply"},
-  "appearance.cursor-dye.config": {"icon":"","label":"Open Configuration","action":"omarchy-cursor-dye config"},
-  "appearance.cursor-dye.status": {"icon":"󰙎","label":"Show Status","action":"omarchy-launch-floating-terminal-with-presentation omarchy-cursor-dye status"},
-  "appearance.cursor-dye.clear-cache": {"icon":"󰆴","label":"Clear Build Cache","action":"omarchy-cursor-dye clear-cache"}
+  "appearance.cursor-dye.config": {"icon":"","label":"Open Configuration","action":"omarchy-cursor-dye config"}
 }
